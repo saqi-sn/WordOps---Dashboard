@@ -818,7 +818,7 @@ npm run build      # → dist/ ready to deploy
 
 Never skip ahead — later steps assume earlier files exist. If a step reveals a spec gap, note it inline and ask before improvising.
 
-**Status:** `A10 done — Phase A (backend) complete`
+**Status:** `B1 done — frontend scaffold builds clean (74 KB gzip)`
 
 ### Phase A — Backend (PHP)
 - [x] **A1. Project skeleton + config.** Create `backend/` tree. Write `config.example.php` (all defines from spec). Add `.gitignore` (`config.php`, `frontend/dist`, `node_modules`, `.env*`).
@@ -843,7 +843,8 @@ Never skip ahead — later steps assume earlier files exist. If a step reveals a
   - No system PHP (CachyOS); ran everything in `php:8.3-cli` Docker (zero system change). **`php -l` clean on all 11 files.** Wrote a gitignored test `backend/config.php` (test creds, `WO_BIN` absent, `FM_ROOT=/tmp/www`, S3 disabled) + a 25-assertion stream-HTTP client against `php -S 127.0.0.1:8080 index.php`. **25/25 pass:** unauth→401, wrong/right login, `/auth/me`, bad-token→401, sites list JSON, unknown→404, create bad-type→400, **injection domain `bad;rm -rf`→400**, stack bad-service→400, logs bad-type→404, files list, **`../` jail escape blocked**, text read, binary→415, `.php` write blocked + `allow_php` override, write/mkdir/rename/delete roundtrip, dir-delete-needs-recursive, backups list, **S3-push-when-disabled→400**, system disk parse. One initial fail was a fixture bug (POSIX `printf '\x00'` ≠ null byte → used `\000`), not app code. No parser bugs found. Note: built-in server confirms `getallheaders()`/Bearer auth works without nginx. `config.php` left in place (gitignored) for local dev.
 
 ### Phase B — Frontend (React + Vite)
-- [ ] **B1. Scaffold.** `npm create vite` (react-ts), install react-router. `theme.css` with CSS vars. Google Fonts. `vite.config.ts` proxy.
+- [x] **B1. Scaffold.** `npm create vite` (react-ts), install react-router. `theme.css` with CSS vars. Google Fonts. `vite.config.ts` proxy.
+  - Scaffolded `frontend/` by hand (Vite interactive create unsupported in this env): `package.json` (React 19, react-router-dom 7, Vite 7, TS 5.9), `vite.config.ts`, `tsconfig.json` + `tsconfig.node.json`, `index.html`, `src/{main,App}.tsx`, `src/theme.css`, `src/vite-env.d.ts`, `.env.example`. `theme.css` = full spec CSS vars + base reset + component classes (`.card`, `.btn*`, `.badge*`, `.input`, `.mono-surface`, `.page-title`, `.section-label`). Google Fonts (DM Sans + JetBrains Mono) loaded in `index.html`. Dev proxy `/api` → `VITE_API_PROXY` env (default `localhost:8080`); `changeOrigin:true`. `main.tsx` wraps `App` in `BrowserRouter` (routes/guard land in B3). `App.tsx` is a placeholder card confirming theme renders. Deviations: (1) added `@types/node` for `process` in vite config; (2) `tsconfig.node.json` uses throwaway `outDir` instead of `noEmit` (TS 5.9 forbids `noEmit` on a referenced composite project) and drops `allowImportingTsExtensions` (emit conflict); (3) `npm install` needs `node node_modules/esbuild/install.js` once — host npm blocks postinstall scripts. **`npm run build` clean: 41 modules, 228 KB raw / 74 KB gzip JS** — under the vite-spa 200 KB init budget.
 - [ ] **B2. auth.ts + client.ts.** Token storage, `request()` with 401→login, full `api` object.
 - [ ] **B3. Shell.** `Layout` (sidebar nav: Dashboard·Sites·Backups·Files·Stack·Logs + topbar user/logout). `Card`, `StatusBadge`, `Toast`, `ConfirmDialog` (typed-confirm). Route guard.
 - [ ] **B4. Login page.**

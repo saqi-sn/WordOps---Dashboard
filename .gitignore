@@ -3,6 +3,7 @@ backend/config.php
 
 # Frontend build + deps
 frontend/dist/
+frontend/*.tsbuildinfo
 node_modules/
 
 # Env files

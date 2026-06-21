@@ -1,0 +1,145 @@
+/* WordOps Panel — Illustration Theme
+   CSS variables + base component classes. No Ant Design lib; pure CSS. */
+
+:root {
+  /* Colors */
+  --color-bg:        #FFF9F0;   /* warm cream — page background */
+  --color-surface:   #FFFFFF;   /* cards, panels */
+  --color-surface-2: #FFF0F6;   /* alternate card bg (pink tint) */
+  --color-border:    #2C2C2C;   /* all borders */
+  --color-text:      #2C2C2C;   /* primary text */
+  --color-text-muted:#6B6B6B;
+  --color-primary:   #52C41A;   /* green */
+  --color-primary-dark: #389E0D;
+  --color-danger:    #FA5252;
+  --color-warning:   #FFD93D;
+  --color-success:   #51CF66;
+  --color-info:      #4DABF7;
+
+  /* Shape */
+  --radius:     12px;
+  --radius-lg:  16px;
+  --radius-sm:  8px;
+
+  /* The signature illustration effect */
+  --border:     2px solid var(--color-border);
+  --shadow:     4px 4px 0 var(--color-border);
+  --shadow-sm:  2px 2px 0 var(--color-border);
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* Typography */
+  --font-body:    'DM Sans', sans-serif;
+  --font-mono:    'JetBrains Mono', monospace;
+  --font-size:    15px;
+  --font-weight-bold: 700;
+}
+
+/* ---- Reset / base ---- */
+*, *::before, *::after { box-sizing: border-box; }
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--font-size);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, h4, h5, h6 { font-weight: var(--font-weight-bold); margin: 0 0 var(--space-md); }
+
+a { color: var(--color-primary-dark); }
+
+code, pre, .mono { font-family: var(--font-mono); }
+
+/* Page title + section label helpers */
+.page-title    { font-size: 24px; }
+.section-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--color-text-muted); font-weight: 700; }
+
+/* ---- Card ---- */
+.card {
+  background: var(--color-surface);
+  border: var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: var(--space-lg);
+}
+.card-2 { background: var(--color-surface-2); }
+
+/* ---- Buttons ---- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border: var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  background: white;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--font-size);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+.btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-primary { background: var(--color-primary); color: white; }
+.btn-danger  { background: var(--color-danger);  color: white; }
+.btn-default { background: white; }
+
+/* ---- Inputs ---- */
+.input {
+  width: 100%;
+  padding: var(--space-sm) var(--space-md);
+  border: var(--border);
+  border-radius: var(--radius);
+  background: white;
+  color: var(--color-text);
+  font-family: var(--font-body);
+  font-size: var(--font-size);
+}
+.input:focus { outline: none; box-shadow: var(--shadow-sm); }
+
+/* ---- Status badges ---- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: 2px var(--space-sm);
+  border: var(--border);
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.badge-running { background: var(--color-primary); color: white; }
+.badge-stopped { background: var(--color-danger);  color: white; }
+.badge-unknown { background: #E0E0E0; color: var(--color-text); }
+
+/* ---- Mono surface (logs / file editor) ---- */
+.mono-surface {
+  background: #1E1E1E;
+  color: #E6E6E6;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  border: var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-md);
+  white-space: pre;
+  overflow: auto;
+}
