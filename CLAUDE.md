@@ -818,7 +818,7 @@ npm run build      # → dist/ ready to deploy
 
 Never skip ahead — later steps assume earlier files exist. If a step reveals a spec gap, note it inline and ask before improvising.
 
-**Status:** `B1 done — frontend scaffold builds clean (74 KB gzip)`
+**Status:** `B10 done — Phase B (frontend) complete; builds clean (84 KB gzip)`
 
 ### Phase A — Backend (PHP)
 - [x] **A1. Project skeleton + config.** Create `backend/` tree. Write `config.example.php` (all defines from spec). Add `.gitignore` (`config.php`, `frontend/dist`, `node_modules`, `.env*`).
@@ -845,15 +845,24 @@ Never skip ahead — later steps assume earlier files exist. If a step reveals a
 ### Phase B — Frontend (React + Vite)
 - [x] **B1. Scaffold.** `npm create vite` (react-ts), install react-router. `theme.css` with CSS vars. Google Fonts. `vite.config.ts` proxy.
   - Scaffolded `frontend/` by hand (Vite interactive create unsupported in this env): `package.json` (React 19, react-router-dom 7, Vite 7, TS 5.9), `vite.config.ts`, `tsconfig.json` + `tsconfig.node.json`, `index.html`, `src/{main,App}.tsx`, `src/theme.css`, `src/vite-env.d.ts`, `.env.example`. `theme.css` = full spec CSS vars + base reset + component classes (`.card`, `.btn*`, `.badge*`, `.input`, `.mono-surface`, `.page-title`, `.section-label`). Google Fonts (DM Sans + JetBrains Mono) loaded in `index.html`. Dev proxy `/api` → `VITE_API_PROXY` env (default `localhost:8080`); `changeOrigin:true`. `main.tsx` wraps `App` in `BrowserRouter` (routes/guard land in B3). `App.tsx` is a placeholder card confirming theme renders. Deviations: (1) added `@types/node` for `process` in vite config; (2) `tsconfig.node.json` uses throwaway `outDir` instead of `noEmit` (TS 5.9 forbids `noEmit` on a referenced composite project) and drops `allowImportingTsExtensions` (emit conflict); (3) `npm install` needs `node node_modules/esbuild/install.js` once — host npm blocks postinstall scripts. **`npm run build` clean: 41 modules, 228 KB raw / 74 KB gzip JS** — under the vite-spa 200 KB init budget.
-- [ ] **B2. auth.ts + client.ts.** Token storage, `request()` with 401→login, full `api` object.
-- [ ] **B3. Shell.** `Layout` (sidebar nav: Dashboard·Sites·Backups·Files·Stack·Logs + topbar user/logout). `Card`, `StatusBadge`, `Toast`, `ConfirmDialog` (typed-confirm). Route guard.
-- [ ] **B4. Login page.**
-- [ ] **B5. Dashboard.** stat cards + stack grid + recent backups + refresh.
-- [ ] **B6. Sites page.** table + create modal + delete typed-confirm + row actions.
-- [ ] **B7. Backups page.** selector, create, table, download (fetch→blob), push-to-S3, delete.
-- [ ] **B8. Files page.** breadcrumb, listing, upload (FormData), edit view, mkdir/rename/delete.
-- [ ] **B9. Stack + Logs pages.** stack cards w/ auto-refresh; log viewer dark theme + auto-refresh + copy.
-- [ ] **B10. Build + polish.** `npm run build` clean, fix TS errors, responsive check.
+- [x] **B2. auth.ts + client.ts.** Token storage, `request()` with 401→login, full `api` object.
+  - `src/auth.ts`: token + expiry in localStorage; `isAuthed()` also checks stored expiry (from login `expires_in`) and self-clears when past. `src/api/types.ts`: all spec interfaces + `SiteInfo` (= `Record<string,string>`), `StackService`, `UptimeInfo`, `LogResponse`, `CommandResult`. `src/api/client.ts`: `request<T>()` (Bearer, 401→clear+`/login`, parses `{error|output}` into thrown `ApiError{status}`); `download()` (authed fetch→blob→`<a download>`); `upload()` (FormData, no JSON header). `api` object matches backend response shapes **exactly** (verified against route files): `sites.list`→`.sites`, `info`→`.info`, `backups.list`→`.backups`, `files.list`→`.entries`, etc. — list helpers unwrap so callers get arrays. Deviation: added `ApiError` export (status-aware) so pages can distinguish 413/415 on file read.
+- [x] **B3. Shell.** `Layout` (sidebar nav: Dashboard·Sites·Backups·Files·Stack·Logs + topbar user/logout). `Card`, `StatusBadge`, `Toast`, `ConfirmDialog` (typed-confirm). Route guard.
+  - `components/`: `Toast` (context + `useToast().push(msg,kind)`, auto-dismiss 4s, top-right stack), `Card` (`.card`/`.card-2`), `StatusBadge` (running/enabled→green, stopped/disabled→red, else gray), `Modal` (backdrop+card, click-out close), `ConfirmDialog` (typed-confirm: button locked until input === exact phrase), `Spinner` (CSS keyframes, injected once), `Layout` (220px sticky sidebar `surface-2` + active-route green left-border accent, topbar shows `auth/me` user + Logout). Route guard = `RequireAuth` in `App.tsx` (`auth.isAuthed()` else `<Navigate to=/login>`); all 6 app routes nested under `<Layout/>`, `*`→`/`. Extra helpers beyond spec list: `Modal`, `Spinner` (shared by every page).
+- [x] **B4. Login page.**
+  - `pages/Login.tsx`: centered card, username+password, `api.auth.login`→`auth.set(token,expires_in)`→navigate `/`. Invalid creds → inline red message (backend already throttles). Spinner while busy.
+- [x] **B5. Dashboard.** stat cards + stack grid + recent backups + refresh.
+  - `pages/Dashboard.tsx` + `hooks/useAsync.ts` (mount-fetch with `data/loading/error/reload`). 3 stat cards (Total Sites, Stack X/Y running, Disk %+used/total), services grid (status badge + per-card Restart), Recent Backups = merge of `backups.list` across all sites, newest 5. Refresh reloads all three sources.
+- [x] **B6. Sites page.** table + create modal + delete typed-confirm + row actions.
+  - `pages/Sites.tsx`: table (Domain·Type·PHP·Cache·SSL·Status·Actions). Create modal (domain/type/php/cache/ssl; proxy-target field appears when type=proxy) → spinner "Creating… may take a minute". Row actions: Info modal (key:value table), Purge, Enable/Disable toggle, Backups link (`/backups?domain=`), Files link (`/files?path=`), Delete (typed-confirm = exact domain). ssl shown from list = always `—` (backend can't know SSL from `site list`; true state via Info).
+- [x] **B7. Backups page.** selector, create, table, download (fetch→blob), push-to-S3, delete.
+  - `pages/Backups.tsx`: site selector (prefills from `?domain=` query / first site), Create Backup (spinner), table (Filename·Size·Date·In S3·Actions). Download via authed blob; Push to S3 (disabled when already `in_s3`); Delete confirm. Deviation: Push-to-S3 button is **always rendered** (disabled-on-`in_s3`), not hidden-when-S3-unconfigured — frontend has no S3-config probe endpoint, so backend's 400/501 surfaces as an error toast instead.
+- [x] **B8. Files page.** breadcrumb, listing, upload (FormData), edit view, mkdir/rename/delete.
+  - `pages/FileManager.tsx`: clickable breadcrumb (jail root = `/var/www`), `?path=` deep-link, listing (Name·Size·Modified·Perms·Actions) with `..` row + dir descend. Toolbar New Folder / Upload (picker→FormData, auto-sets `allow_php` for php-ext) / Refresh. File: Download (blob), Edit (mono-surface textarea modal; 415/413 → toast; `.php` shows allow-exec checkbox), Rename, Delete. Dir delete = typed-confirm (name) + recursive flag.
+- [x] **B9. Stack + Logs pages.** stack cards w/ auto-refresh; log viewer dark theme + auto-refresh + copy.
+  - `pages/Stack.tsx`: per-service card (status badge + Start/Stop/Restart, per-card busy), auto-refresh 30s. `pages/Logs.tsx`: type selector (nginx/error·nginx/access·php·mysql — keys match backend path), lines 50/100/200/500, dark `mono-surface` `<pre>` auto-scrolled to bottom, Auto-10s toggle, Copy all (clipboard).
+- [x] **B10. Build + polish.** `npm run build` clean, fix TS errors, responsive check.
+  - `npm run build` clean first pass under strict TS (noUnusedLocals/Parameters): **58 modules, 269 KB raw / 84 KB gzip JS** — under vite-spa 200 KB init budget. `vite preview` serves index + JS + SPA fallback (`/sites`→200). Tables wrap in `overflow:auto` cards with `minWidth` for small-screen scroll; toolbars `flex-wrap`. Runtime not browser-tested here (no headless browser in env) — typecheck + transform + serve all green.
 
 ### Phase C — Deploy & Harden
 - [ ] **C1. deploy.sh** (rsync, exclude `config.php`).

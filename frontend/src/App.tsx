@@ -1,16 +1,36 @@
-// Placeholder shell — real routes, layout, and route guard land in B3+.
-// Confirms the scaffold (theme, fonts, build) renders before page work begins.
+import { Navigate, Route, Routes } from 'react-router-dom'
+import { auth } from './auth'
+import { ToastProvider } from './components/Toast'
+import { Layout } from './components/Layout'
+import { Login } from './pages/Login'
+import { Dashboard } from './pages/Dashboard'
+import { Sites } from './pages/Sites'
+import { Backups } from './pages/Backups'
+import { FileManager } from './pages/FileManager'
+import { Stack } from './pages/Stack'
+import { Logs } from './pages/Logs'
+import type { ReactNode } from 'react'
+
+function RequireAuth({ children }: { children: ReactNode }) {
+  if (!auth.isAuthed()) return <Navigate to="/login" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
-    <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 'var(--space-xl)' }}>
-      <div className="card" style={{ maxWidth: 480, textAlign: 'center' }}>
-        <h1 className="page-title">WordOps Panel</h1>
-        <p className="section-label">scaffold ready — phase b</p>
-        <p style={{ color: 'var(--color-text-muted)' }}>
-          Frontend scaffold is live. Auth, layout, and pages build next.
-        </p>
-        <button className="btn btn-primary">Illustration Theme</button>
-      </div>
-    </div>
+    <ToastProvider>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route element={<RequireAuth><Layout /></RequireAuth>}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/sites" element={<Sites />} />
+          <Route path="/backups" element={<Backups />} />
+          <Route path="/files" element={<FileManager />} />
+          <Route path="/stack" element={<Stack />} />
+          <Route path="/logs" element={<Logs />} />
+        </Route>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </ToastProvider>
   )
 }

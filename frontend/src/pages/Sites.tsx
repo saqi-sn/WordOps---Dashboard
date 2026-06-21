@@ -1,0 +1,222 @@
+import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { api } from '../api/client'
+import { useAsync } from '../hooks/useAsync'
+import { Card } from '../components/Card'
+import { Modal } from '../components/Modal'
+import { ConfirmDialog } from '../components/ConfirmDialog'
+import { StatusBadge } from '../components/StatusBadge'
+import { Spinner } from '../components/Spinner'
+import { useToast } from '../components/Toast'
+import type { CreateSite, Site, SiteInfo } from '../api/types'
+
+const PHP_VERSIONS: CreateSite['php'][] = ['74', '80', '81', '82', '83']
+
+const EMPTY_CREATE: CreateSite = { domain: '', type: 'wp', php: '82', cache: 'fastcgi', ssl: false }
+
+export function Sites() {
+  const navigate = useNavigate()
+  const toast = useToast()
+  const sites = useAsync(() => api.sites.list(), [])
+
+  const [createOpen, setCreateOpen] = useState(false)
+  const [form, setForm] = useState<CreateSite>(EMPTY_CREATE)
+  const [creating, setCreating] = useState(false)
+
+  const [info, setInfo] = useState<{ domain: string; data: SiteInfo } | null>(null)
+  const [delTarget, setDelTarget] = useState<Site | null>(null)
+  const [busyRow, setBusyRow] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
+  const set = <K extends keyof CreateSite>(k: K, v: CreateSite[K]) => setForm(f => ({ ...f, [k]: v }))
+
+  const create = async () => {
+    setCreating(true)
+    try {
+      const r = await api.sites.create(form)
+      if (r.ok) {
+        toast.push('Site created', 'success')
+        setCreateOpen(false)
+        setForm(EMPTY_CREATE)
+        sites.reload()
+      } else {
+        toast.push(r.output || 'Create failed', 'error')
+      }
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Create failed', 'error')
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  const action = async (domain: string, fn: () => Promise<unknown>, label: string) => {
+    setBusyRow(domain)
+    try {
+      await fn()
+      toast.push(label, 'success')
+      sites.reload()
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Action failed', 'error')
+    } finally {
+      setBusyRow('')
+    }
+  }
+
+  const openInfo = async (domain: string) => {
+    try {
+      const data = await api.sites.info(domain)
+      setInfo({ domain, data })
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Info failed', 'error')
+    }
+  }
+
+  const doDelete = async () => {
+    if (!delTarget) return
+    setDeleting(true)
+    try {
+      await api.sites.remove(delTarget.domain)
+      toast.push(`${delTarget.domain} deleted`, 'success')
+      setDelTarget(null)
+      sites.reload()
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Delete failed', 'error')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-lg)' }}>
+        <h1 className="page-title">Sites</h1>
+        <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+          <button className="btn btn-default" onClick={sites.reload}>Refresh</button>
+          <button className="btn btn-primary" onClick={() => setCreateOpen(true)}>Create Site</button>
+        </div>
+      </div>
+
+      <Card style={{ padding: 0, overflow: 'auto' }}>
+        {sites.loading && <div style={{ padding: 'var(--space-lg)' }}><Spinner /></div>}
+        {sites.error && <div style={{ padding: 'var(--space-lg)', color: 'var(--color-danger)' }}>{sites.error}</div>}
+        {sites.data && (
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+            <thead>
+              <tr style={{ textAlign: 'left', background: 'var(--color-surface-2)' }}>
+                {['Domain', 'Type', 'PHP', 'Cache', 'SSL', 'Status', 'Actions'].map(h => (
+                  <th key={h} style={{ padding: 'var(--space-sm) var(--space-md)', fontSize: 12, textTransform: 'uppercase' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sites.data.map(s => (
+                <tr key={s.domain} style={{ borderTop: '1px solid #eee' }}>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)', fontWeight: 700 }}>{s.domain}</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{s.type || '—'}</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{s.php || '—'}</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{s.cache || '—'}</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{s.ssl ? '🔒' : '—'}</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}><StatusBadge status={s.status} /></td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>
+                    <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                      {busyRow === s.domain && <Spinner />}
+                      <button className="btn btn-default" style={btnSm} onClick={() => openInfo(s.domain)}>Info</button>
+                      <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.purgeCache(s.domain), 'Cache purged')}>Purge</button>
+                      {s.status === 'enabled'
+                        ? <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.disable(s.domain), 'Disabled')}>Disable</button>
+                        : <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.enable(s.domain), 'Enabled')}>Enable</button>}
+                      <button className="btn btn-default" style={btnSm} onClick={() => navigate(`/backups?domain=${s.domain}`)}>Backups</button>
+                      <button className="btn btn-default" style={btnSm} onClick={() => navigate(`/files?path=${s.domain}`)}>Files</button>
+                      <button className="btn btn-danger" style={btnSm} onClick={() => setDelTarget(s)}>Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+              {sites.data.length === 0 && (
+                <tr><td colSpan={7} style={{ padding: 'var(--space-lg)', color: 'var(--color-text-muted)' }}>No sites yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+        )}
+      </Card>
+
+      {/* Create modal */}
+      <Modal open={createOpen} title="Create Site" onClose={() => !creating && setCreateOpen(false)}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          <label>
+            <div className="section-label">Domain</div>
+            <input className="input" placeholder="example.com" value={form.domain} onChange={e => set('domain', e.target.value)} />
+          </label>
+          <label>
+            <div className="section-label">Type</div>
+            <select className="input" value={form.type} onChange={e => set('type', e.target.value as CreateSite['type'])}>
+              <option value="wp">WordPress</option>
+              <option value="html">HTML</option>
+              <option value="php">PHP</option>
+              <option value="proxy">Proxy</option>
+            </select>
+          </label>
+          {form.type === 'proxy' && (
+            <label>
+              <div className="section-label">Proxy target (host:port)</div>
+              <input className="input" placeholder="127.0.0.1:8080" value={form.proxyTarget ?? ''} onChange={e => set('proxyTarget', e.target.value)} />
+            </label>
+          )}
+          <label>
+            <div className="section-label">PHP version</div>
+            <select className="input" value={form.php} onChange={e => set('php', e.target.value as CreateSite['php'])}>
+              {PHP_VERSIONS.map(v => <option key={v} value={v}>{v[0]}.{v.slice(1)}</option>)}
+            </select>
+          </label>
+          <label>
+            <div className="section-label">Cache</div>
+            <select className="input" value={form.cache} onChange={e => set('cache', e.target.value as CreateSite['cache'])}>
+              <option value="fastcgi">FastCGI</option>
+              <option value="redis">Redis</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-sm)' }}>
+            <input type="checkbox" checked={form.ssl} onChange={e => set('ssl', e.target.checked)} />
+            <span>Let's Encrypt SSL (domain DNS must already resolve here)</span>
+          </label>
+          <button className="btn btn-primary" disabled={creating || !form.domain} onClick={create}>
+            {creating ? <><Spinner /> Creating… may take a minute</> : 'Create'}
+          </button>
+        </div>
+      </Modal>
+
+      {/* Info modal */}
+      <Modal open={!!info} title={info ? `Info — ${info.domain}` : ''} onClose={() => setInfo(null)} width={520}>
+        {info && (
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <tbody>
+              {Object.entries(info.data).map(([k, v]) => (
+                <tr key={k} style={{ borderTop: '1px solid #eee' }}>
+                  <td style={{ padding: 'var(--space-xs) var(--space-sm)', fontWeight: 700, whiteSpace: 'nowrap' }}>{k}</td>
+                  <td className="mono" style={{ padding: 'var(--space-xs) var(--space-sm)', fontSize: 13 }}>{v}</td>
+                </tr>
+              ))}
+              {Object.keys(info.data).length === 0 && <tr><td style={{ color: 'var(--color-text-muted)' }}>No info returned.</td></tr>}
+            </tbody>
+          </table>
+        )}
+      </Modal>
+
+      {/* Delete typed-confirm */}
+      <ConfirmDialog
+        open={!!delTarget}
+        title="Delete Site"
+        message={`This permanently deletes ${delTarget?.domain} and all its data via "wo site delete".`}
+        confirmPhrase={delTarget?.domain}
+        confirmLabel="Delete Site"
+        danger
+        busy={deleting}
+        onConfirm={doDelete}
+        onCancel={() => !deleting && setDelTarget(null)}
+      />
+    </div>
+  )
+}
+
+const btnSm = { padding: '4px 10px', fontSize: 12 }
