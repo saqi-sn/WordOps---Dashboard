@@ -818,14 +818,15 @@ npm run build      # → dist/ ready to deploy
 
 Never skip ahead — later steps assume earlier files exist. If a step reveals a spec gap, note it inline and ask before improvising.
 
-**Status:** `A2 done`
+**Status:** `A3 done`
 
 ### Phase A — Backend (PHP)
 - [x] **A1. Project skeleton + config.** Create `backend/` tree. Write `config.example.php` (all defines from spec). Add `.gitignore` (`config.php`, `frontend/dist`, `node_modules`, `.env*`).
   - Created `backend/` + `backend/routes/`. Wrote `config.example.php` (all spec defines, placeholder secrets). Wrote root `.gitignore` (ignores `backend/config.php`, `frontend/dist/`, `node_modules/`, `.env*`). No spec deviations.
 - [x] **A2. auth.php.** `issue_token` / `verify_token` (HMAC), `auth_login` (throttle on fail), `require_auth`. Add `GET /auth/me`.
   - Wrote `backend/auth.php`. `issue_token`/`verify_token` per spec; added `token_payload()` helper (verify reuses it) so `auth_me()` can read the username from the token. Throttle = temp-file lockout (`sys_get_temp_dir()/wo_gui_login_attempts.json`): 5 fails in a 15-min rolling window → 60s lock (429 + `Retry-After`); `sleep(1)` on each fail; cleared on success. Added `auth_me()` for `GET /auth/me`. Deviation from spec snippet: `verify_token` delegates to `token_payload` (same logic, no behavior change) and used b64url helper fns to dedupe. PHP not installed locally — `php -l` deferred to A10 smoke test.
-- [ ] **A3. wo.php.** `wo_exec`, `validate_domain`, flag-whitelist helper for site create.
+- [x] **A3. wo.php.** `wo_exec`, `validate_domain`, flag-whitelist helper for site create.
+  - Wrote `backend/wo.php`. Deviation from spec snippet: `wo_exec` takes an **array** of tokens (not a string) and uses `exec()` + per-arg `escapeshellarg()` instead of `escapeshellcmd()` on a joined string — safer (no shell metachar leakage) and captures the real exit code, returned as `code` plus `ok` (`code === 0`). Routes in A5 must call `wo_exec(['site','list', ...])`. Added `valid_proxy_target()` (host:port regex, port 1–65535) and `build_create_args()` (whitelist→flags, 400 on any non-whitelisted value via new `reject()` helper). `validate_domain` hardened beyond spec: length ≤253, no leading/trailing dot/dash. PHP not installed locally — `php -l` deferred to A10.
 - [ ] **A4. index.php router.** Public `/auth/login`, then `require_auth`, then dispatch to `routes/*`. CORS + JSON headers + 404.
 - [ ] **A5. routes/sites.php.** list (parse table), info, create (whitelist→`wo site create`), delete (`--no-prompt`), enable, disable, cache purge.
 - [ ] **A6. routes/stack.php + logs.php + system.** stack status/start/stop/restart (service whitelist); log tail (type whitelist, lines cap); disk + uptime parse.
