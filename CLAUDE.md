@@ -726,7 +726,7 @@ of two design choices that remove every reason to touch nginx:
 wo site create panel.example.com --php82          # configures nginx + PHP-FPM for us
 cd /var/www/panel.example.com/htdocs
 rm -f index.html index.php                         # drop WordOps placeholder
-wget -qO- https://github.com/<you>/<repo>/releases/latest/download/wordops-gui.tar.gz | tar xz
+wget -qO- https://github.com/saqi-sn/WordOps---Dashboard/releases/latest/download/wordops-gui.tar.gz | tar xz
 cp api/config.example.php api/config.php           # then fill in secrets (only manual step)
 ```
 Webroot ends up: `index.html` + `assets/` at root, PHP under `api/`. `client_max_body_size`

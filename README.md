@@ -20,7 +20,7 @@ wo site create panel.example.com --php82
 # 2. Drop the prebuilt app into the webroot
 cd /var/www/panel.example.com/htdocs
 rm -f index.html index.php            # remove the WordOps placeholder
-wget -qO- https://github.com/<you>/<repo>/releases/latest/download/wordops-gui.tar.gz | tar xz
+wget -qO- https://github.com/saqi-sn/WordOps---Dashboard/releases/latest/download/wordops-gui.tar.gz | tar xz
 # now: htdocs/index.html, htdocs/assets/, htdocs/api/*.php
 
 # 3. Create the config (the only manual step — it holds your secrets)
