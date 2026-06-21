@@ -1,0 +1,15 @@
+# Backend secrets — never commit
+backend/config.php
+
+# Frontend build + deps
+frontend/dist/
+node_modules/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+*.log
