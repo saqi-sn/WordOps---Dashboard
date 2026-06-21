@@ -818,7 +818,7 @@ npm run build      # → dist/ ready to deploy
 
 Never skip ahead — later steps assume earlier files exist. If a step reveals a spec gap, note it inline and ask before improvising.
 
-**Status:** `A3 done`
+**Status:** `A4 done`
 
 ### Phase A — Backend (PHP)
 - [x] **A1. Project skeleton + config.** Create `backend/` tree. Write `config.example.php` (all defines from spec). Add `.gitignore` (`config.php`, `frontend/dist`, `node_modules`, `.env*`).
@@ -827,7 +827,8 @@ Never skip ahead — later steps assume earlier files exist. If a step reveals a
   - Wrote `backend/auth.php`. `issue_token`/`verify_token` per spec; added `token_payload()` helper (verify reuses it) so `auth_me()` can read the username from the token. Throttle = temp-file lockout (`sys_get_temp_dir()/wo_gui_login_attempts.json`): 5 fails in a 15-min rolling window → 60s lock (429 + `Retry-After`); `sleep(1)` on each fail; cleared on success. Added `auth_me()` for `GET /auth/me`. Deviation from spec snippet: `verify_token` delegates to `token_payload` (same logic, no behavior change) and used b64url helper fns to dedupe. PHP not installed locally — `php -l` deferred to A10 smoke test.
 - [x] **A3. wo.php.** `wo_exec`, `validate_domain`, flag-whitelist helper for site create.
   - Wrote `backend/wo.php`. Deviation from spec snippet: `wo_exec` takes an **array** of tokens (not a string) and uses `exec()` + per-arg `escapeshellarg()` instead of `escapeshellcmd()` on a joined string — safer (no shell metachar leakage) and captures the real exit code, returned as `code` plus `ok` (`code === 0`). Routes in A5 must call `wo_exec(['site','list', ...])`. Added `valid_proxy_target()` (host:port regex, port 1–65535) and `build_create_args()` (whitelist→flags, 400 on any non-whitelisted value via new `reject()` helper). `validate_domain` hardened beyond spec: length ≤253, no leading/trailing dot/dash. PHP not installed locally — `php -l` deferred to A10.
-- [ ] **A4. index.php router.** Public `/auth/login`, then `require_auth`, then dispatch to `routes/*`. CORS + JSON headers + 404.
+- [x] **A4. index.php router.** Public `/auth/login`, then `require_auth`, then dispatch to `routes/*`. CORS + JSON headers + 404.
+  - Wrote `backend/index.php`. CORS + JSON headers, OPTIONS short-circuit. Strips `/api` prefix (regex `^/api(?=/|$)` so a path segment literally named `api...` isn't mangled), splits path into `$parts`. Public `POST /auth/login`; everything else gated by `require_auth()`; `GET /auth/me` after gate. **Routing contract (A5+ MUST follow):** each `routes/<name>.php` defines `handle_<name>($method, $parts)` (`$parts` = full path split on `/`, e.g. `['sites','example.com','info']`); router `require`s the file if present, calls the fn, else 404. `/sites/{domain}/backups*` → `backups.php`; other `/sites` → `sites.php`; `stack`/`logs`/`files`/`system` → same-name file (via `match`). Deviation from spec snippet: `s3.php` include is conditional (`is_file`) since A8 not done; route files included on-demand only when present, so unbuilt routes 404 cleanly instead of fatal-erroring. PHP not installed locally — `php -l` deferred to A10.
 - [ ] **A5. routes/sites.php.** list (parse table), info, create (whitelist→`wo site create`), delete (`--no-prompt`), enable, disable, cache purge.
 - [ ] **A6. routes/stack.php + logs.php + system.** stack status/start/stop/restart (service whitelist); log tail (type whitelist, lines cap); disk + uptime parse.
 - [ ] **A7. routes/backups.php.** scan dir, create (`wo site backup`), download stream, delete, `safe_backup_path`.
