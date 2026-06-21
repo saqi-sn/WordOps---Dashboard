@@ -22,6 +22,23 @@ function wo_exec(array $args): array {
     ];
 }
 
+// Run an arbitrary non-`wo` command (tail, df, uptime). $args is an array of
+// already-safe tokens; each is shell-escaped here. Same shape as wo_exec().
+// Used by stack/logs/system routes. Never pass raw user strings.
+function sh_exec(array $args): array {
+    $parts = [];
+    foreach ($args as $a) $parts[] = escapeshellarg((string) $a);
+    $full = implode(' ', $parts) . ' 2>&1';
+    $code = 0;
+    $lines = [];
+    exec($full, $lines, $code);
+    return [
+        'output' => trim(implode("\n", $lines)),
+        'ok'     => $code === 0,
+        'code'   => $code,
+    ];
+}
+
 // Validate a domain. Sends 400 + exits on bad input. Returns clean domain.
 function validate_domain(string $domain): string {
     $domain = trim($domain);
