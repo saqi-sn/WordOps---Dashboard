@@ -818,7 +818,7 @@ npm run build      # → dist/ ready to deploy
 
 Never skip ahead — later steps assume earlier files exist. If a step reveals a spec gap, note it inline and ask before improvising.
 
-**Status:** `A8 done`
+**Status:** `A9 done`
 
 ### Phase A — Backend (PHP)
 - [x] **A1. Project skeleton + config.** Create `backend/` tree. Write `config.example.php` (all defines from spec). Add `.gitignore` (`config.php`, `frontend/dist`, `node_modules`, `.env*`).
@@ -837,7 +837,8 @@ Never skip ahead — later steps assume earlier files exist. If a step reveals a
   - Wrote `backend/routes/backups.php` (`handle_backups`). `safe_backup_path()` per spec (`realpath` + prefix check on `/var/www/{domain}/backup/`). GET list globs the dir, hides dotfiles + `.s3manifest.json`, returns `{filename,size_mb,created_at,in_s3}` sorted newest-first; `in_s3` from manifest. POST create → `wo site backup {domain}`. GET file → streams with `Content-Type: application/gzip` + `Content-Disposition` + `Content-Length` (overrides router's JSON header). DELETE → `unlink` validated path. **Decision:** S3 push branch (`POST .../{file}/s3`) + manifest read/write (`read_s3_manifest`/`add_to_s3_manifest`) implemented HERE, guarded by `function_exists('s3_put_file')` (501 until A8) and `S3_BUCKET===''` (400) — so A8 reduces to just writing the `s3.php` SigV4 signer; no edit back to this file needed. PHP not installed locally — `php -l` deferred to A10.
 - [x] **A8. s3.php + backups S3 push.** SigV4 PUT signer. `POST .../s3` push, `.s3manifest.json` read/write, `in_s3` flag, 400 if `S3_BUCKET` empty.
   - Wrote `backend/s3.php` (`s3_put_file`) — path-style SigV4 single-PUT per spec, works with any S3-compatible endpoint. Hardened beyond spec snippet: guards on empty bucket / unreadable local file, scheme fallback `https`, and distinguishes `code===0` curl connection failure (returns `S3 connection failed: {curl_error}`) from HTTP error codes. `index.php` already includes `s3.php` conditionally (`is_file`) so it now activates automatically. Push endpoint + `.s3manifest.json` read/write + `in_s3` flag + 400-on-empty-bucket were all done in A7 (guarded by `function_exists`), so they light up now with zero edits. PHP not installed locally — `php -l` deferred to A10.
-- [ ] **A9. routes/files.php.** `fm_resolve()` jail. list/read/write/upload/download/mkdir/rename/delete. Size caps. Block `.php` write unless flagged.
+- [x] **A9. routes/files.php.** `fm_resolve()` jail. list/read/write/upload/download/mkdir/rename/delete. Size caps. Block `.php` write unless flagged.
+  - Wrote `backend/routes/files.php` (`handle_files`). Every path through `fm_resolve()` (spec jail: realpath + `FM_ROOT` prefix; not-yet-existing targets resolve via parent) → 403 on escape. list (dirs-first sort, `perms_string()` → `rwxr-xr-x`), read (413 if > `FM_MAX_EDIT_BYTES`, 415 if binary via `looks_like_text()` null-byte/utf8 check), write, upload (multipart, 413 over `FM_MAX_UPLOAD_BYTES`), download (octet-stream attachment), mkdir, rename, delete (dirs need `recursive=true`; refuses to delete jail root). **Decision:** `.php` write/upload block extended beyond just `.php` to a list (`php php3 php4 php5 php7 phtml phar cgi pl`), overridable per-request with `allow_php:true` (body for write, POST field for upload) per the security-checklist "unless explicitly intended". Deviations from spec: read returns **415** (not 413) for binary so the UI can distinguish too-big from not-text; write also caps content at `FM_MAX_EDIT_BYTES`. PHP not installed locally — `php -l` deferred to A10.
 - [ ] **A10. Backend smoke test.** `php -S` locally, curl each endpoint with a test token. Fix parse bugs.
 
 ### Phase B — Frontend (React + Vite)
