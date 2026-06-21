@@ -1,8 +1,13 @@
 <?php
 // Front controller / router.
-// Public:  POST /api/auth/login.  Everything else requires a valid session token.
+// Public:  POST auth/login.  Everything else requires a valid session token.
 // Route files live in routes/<name>.php and each defines handle_<name>($method, $parts),
-// where $parts is the path split on '/' (after stripping the /api prefix).
+// where $parts is the route path split on '/'.
+//
+// Routing is query-string based so the GUI needs ZERO nginx changes: the frontend
+// calls /api/index.php?p=/sites — the URL ends in .php, so any default WordOps
+// php-site nginx hands it to PHP-FPM as-is. ?p= carries the route; other query
+// params (path, lines, recursive) are read normally by the route handlers.
 
 require __DIR__ . '/config.php';
 require __DIR__ . '/auth.php';
@@ -16,11 +21,18 @@ header('Access-Control-Allow-Headers: Authorization, Content-Type');
 header('Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS');
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') exit;
 
-// --- parse path: strip /api, trim slashes, split ---
-$uri   = parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
-$uri   = preg_replace('#^/api(?=/|$)#', '', $uri);   // strip leading /api segment only
-$uri   = trim((string) $uri, '/');
-$parts = $uri === '' ? [] : explode('/', $uri);
+// --- determine route path ---
+// Primary: ?p=/sites/...  Fallbacks (for an optional pretty-URL nginx setup):
+// PATH_INFO, then REQUEST_URI with /api and /index.php stripped.
+$routePath = $_GET['p'] ?? ($_SERVER['PATH_INFO'] ?? '');
+if ($routePath === '') {
+    $uri = (string) parse_url($_SERVER['REQUEST_URI'], PHP_URL_PATH);
+    $uri = preg_replace('#^/api(?:/index\.php)?(?=/|$)#', '', $uri);   // /api or /api/index.php
+    $uri = preg_replace('#/index\.php(?=/|$)#', '', $uri);            // bare /index.php
+    $routePath = (string) $uri;
+}
+$routePath = trim($routePath, '/');
+$parts  = $routePath === '' ? [] : explode('/', $routePath);
 $method = $_SERVER['REQUEST_METHOD'];
 
 function not_found(): void {

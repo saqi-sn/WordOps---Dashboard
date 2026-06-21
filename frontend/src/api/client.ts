@@ -4,7 +4,23 @@ import type {
   StackStatus, DiskInfo, UptimeInfo, LogResponse, CommandResult,
 } from './types'
 
-const BASE = import.meta.env.VITE_API_URL ?? '/api'
+// API entry. Query-string routing: every call hits /api/index.php?p=/route so the
+// URL ends in .php and default WordOps php-site nginx routes it to PHP-FPM untouched.
+const BASE = import.meta.env.VITE_API_URL ?? '/api/index.php'
+
+// Fold a route like "/files/list?path=x" into "/api/index.php?p=/files/list&path=x".
+function apiUrl(path: string): string {
+  const qi = path.indexOf('?')
+  const route = qi === -1 ? path : path.slice(0, qi)
+  const params = new URLSearchParams(qi === -1 ? '' : path.slice(qi + 1))
+  params.set('p', route)
+  return `${BASE}?${params.toString()}`
+}
+
+// HashRouter login path (auth cleared on 401).
+function gotoLogin() {
+  if (!location.hash.includes('/login')) location.hash = '#/login'
+}
 
 class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -13,7 +29,7 @@ class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(apiUrl(path), {
     ...options,
     headers: {
       Authorization: `Bearer ${auth.get()}`,
@@ -23,7 +39,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   })
   if (res.status === 401) {
     auth.clear()
-    if (location.pathname !== '/login') location.href = '/login'
+    gotoLogin()
     throw new ApiError(401, 'Unauthorized')
   }
   const data = await res.json().catch(() => ({}))
@@ -36,12 +52,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
 // Authenticated binary fetch → triggers a browser download (Bearer can't ride <a href>).
 async function download(path: string, filename: string): Promise<void> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(apiUrl(path), {
     headers: { Authorization: `Bearer ${auth.get()}` },
   })
   if (res.status === 401) {
     auth.clear()
-    location.href = '/login'
+    gotoLogin()
     throw new ApiError(401, 'Unauthorized')
   }
   if (!res.ok) throw new ApiError(res.status, `Download failed ${res.status}`)
@@ -58,14 +74,14 @@ async function download(path: string, filename: string): Promise<void> {
 
 // Authenticated multipart upload (FormData; no JSON Content-Type).
 async function upload(path: string, form: FormData): Promise<CommandResult> {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(apiUrl(path), {
     method: 'POST',
     headers: { Authorization: `Bearer ${auth.get()}` },
     body: form,
   })
   if (res.status === 401) {
     auth.clear()
-    location.href = '/login'
+    gotoLogin()
     throw new ApiError(401, 'Unauthorized')
   }
   const data = await res.json().catch(() => ({}))

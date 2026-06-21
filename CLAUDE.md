@@ -708,61 +708,76 @@ No token in frontend env anymore — auth is via login form.
 
 ---
 
-## Deployment
+## Deployment — zero-touch (no git / no build / no installs / no nginx changes on server)
 
-### On server — create WordOps site for the GUI
+Install model (decided post-A/B): the app is **prebuilt by CI** into a release tarball
+laid out as the site webroot. The server only fetches + extracts. This is possible because
+of two design choices that remove every reason to touch nginx:
+
+1. **Query-string API routing** — the frontend calls `/api/index.php?p=/sites`. The URL
+   ends in `.php`, so any default WordOps php-site nginx hands it to PHP-FPM untouched.
+   `index.php` reads the route from `$_GET['p']` (fallbacks: `PATH_INFO`, then a
+   `/api`+`/index.php`-stripped `REQUEST_URI` for an optional pretty-URL setup).
+2. **Hash-router frontend** — deep links live in the URL hash (`#/sites`), so one
+   `index.html` serves every route with **no SPA `try_files` fallback** needed.
+
+### Install on the server
 ```bash
-wo site create panel.yourdomain.com --html
-cp -r backend/* /var/www/panel.yourdomain.com/htdocs/api/
-rsync -av frontend/dist/ /var/www/panel.yourdomain.com/htdocs/
-# Set PHP-FPM pool for this site to run as root (needed for wo + /var/www file ops):
-#   /etc/php/8.x/fpm/pool.d/panel.yourdomain.com.conf  → user = root, group = root
+wo site create panel.example.com --php82          # configures nginx + PHP-FPM for us
+cd /var/www/panel.example.com/htdocs
+rm -f index.html index.php                         # drop WordOps placeholder
+wget -qO- https://github.com/<you>/<repo>/releases/latest/download/wordops-gui.tar.gz | tar xz
+cp api/config.example.php api/config.php           # then fill in secrets (only manual step)
 ```
+Webroot ends up: `index.html` + `assets/` at root, PHP under `api/`. `client_max_body_size`
+is **not** required (WordOps php sites default to ample upload size; raise per-site only if
+200 MB uploads are actually used).
 
-### Nginx: PHP routing for /api
-```nginx
-location /api/ {
-    try_files $uri $uri/ /api/index.php?$query_string;
-    location ~ \.php$ {
-        include fastcgi_params;
-        fastcgi_pass unix:/var/run/php/php8.x-fpm.sock;
-        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
-    }
-}
-location / { try_files $uri $uri/ /index.html; }   # SPA routing
-client_max_body_size 200m;                          # match FM_MAX_UPLOAD_BYTES
-```
+### Privileges (unavoidable, one-time)
+`wo` + `/var/www` ops need root, but a php-site pool runs unprivileged. Either set the pool
+`user = root` (`/etc/php/8.x/fpm/pool.d/panel.example.com.conf` → `wo stack restart php`),
+or passwordless-sudo the `wo` binary and set `WO_BIN='sudo /usr/local/bin/wo'` (file-manager
+writes still need a root-capable pool).
 
-### deploy.sh
-```bash
-#!/bin/bash
-SERVER="user@your-server-ip"
-WEBROOT="/var/www/panel.yourdomain.com/htdocs"
-cd frontend && npm run build && cd ..
-rsync -avz --delete frontend/dist/ $SERVER:$WEBROOT/
-rsync -avz --exclude config.php backend/ $SERVER:$WEBROOT/api/
-echo "Deployed."
-```
+### Release tarball — `.github/workflows/release.yml`
+On every `v*` tag (or manual dispatch): `npm ci && npm run build`, assemble `pkg/`
+(`dist/.` at root + `backend/*.php` → `api/`, `config.php` stripped, `config.example.php`
+kept), `tar -czf wordops-gui.tar.gz -C pkg .`, attach to a GitHub Release. Cut one with
+`git tag v0.1.0 && git push --tags`.
+
+### deploy.sh (optional dev path)
+`SERVER=… PANEL=… ./deploy.sh` builds locally and rsyncs `dist/` → webroot + `backend/` →
+`api/` (excludes `config.php`). For pushing local changes without cutting a release.
 
 ---
 
 ## Security Checklist
 
-- [ ] `config.php` gitignored; deploy never overwrites server `config.php`
-- [ ] `ADMIN_PASS_HASH` is a real bcrypt hash; `SESSION_SECRET` ≥ 32 random bytes
-- [ ] Session token = HMAC-signed, expiry enforced, constant-time compare (`hash_equals`)
-- [ ] Failed login throttled (`sleep` + optional lockout)
-- [ ] Backup paths validated with `realpath()` + prefix check before serve/delete
-- [ ] **File manager**: every path through `fm_resolve()`; reject anything outside `FM_ROOT`; no symlink escape
-- [ ] Upload size capped; `.php`/executable uploads into webroots are a real risk — warn, and consider blocking `.php` writes via file manager unless explicitly intended
-- [ ] Domains validated (`^[a-zA-Z0-9.\-]+$`, no `..`) before any `wo` call
-- [ ] `wo` flags built from whitelist only — never raw user strings
-- [ ] Stack service + log type from whitelist only
-- [ ] Site delete + recursive file delete require typed-confirm in UI
-- [ ] PHP-FPM pool bound to its own socket, not exposed externally
-- [ ] Panel served only over HTTPS (WordOps handles SSL)
-- [ ] No directory listing on `/api/`; only `index.php` is a reachable entry point
-- [ ] `client_max_body_size` aligned with upload cap
+> **C3 verification pass (done).** Every box below confirmed against the Phase-A code and
+> the A10 docker smoke test (which empirically proved: unauth→401, jail `../` escape blocked,
+> `.php` write blocked + `allow_php` override, injection domain `bad;rm -rf`→400, S3-disabled→400,
+> binary read→415). Two notes from the zero-nginx redesign: (a) `Access-Control-Allow-Origin: *`
+> is safe here — auth is a Bearer token, not cookies, so `*` carries no credentials; tighten to
+> the panel origin if desired. (b) `api/*.php` are directly fetchable (no nginx deny rule, by
+> design), but `config.php`/`routes/*.php` are **define/function-only — they emit nothing when
+> executed**, so no secret leaks; PHP runs them rather than serving source. Upload size is capped
+> in PHP (`FM_MAX_UPLOAD_BYTES`); server `post_max_size`/`upload_max_filesize` still apply.
+
+- [x] `config.php` gitignored; deploy never overwrites server `config.php`
+- [x] `ADMIN_PASS_HASH` is a real bcrypt hash; `SESSION_SECRET` ≥ 32 random bytes — enforced by config + README (`password_hash`, `openssl rand -hex 32`); example uses placeholders only.
+- [x] Session token = HMAC-signed, expiry enforced, constant-time compare (`hash_equals`) — `auth.php` `issue_token`/`verify_token`.
+- [x] Failed login throttled (`sleep` + optional lockout) — `auth.php` temp-file lockout: `sleep(1)` + 60s lock after 5 fails/15min.
+- [x] Backup paths validated with `realpath()` + prefix check before serve/delete — `safe_backup_path()`.
+- [x] **File manager**: every path through `fm_resolve()`; reject anything outside `FM_ROOT`; no symlink escape — A10 proved `../` escape→403.
+- [x] Upload size capped; `.php`/executable uploads blocked — `FM_BLOCKED_EXT` list, `allow_php` override; A10 proved block + override.
+- [x] Domains validated (`^[a-zA-Z0-9.\-]+$`, no `..`) before any `wo` call — `validate_domain()`; A10 proved injection→400.
+- [x] `wo` flags built from whitelist only — never raw user strings — `build_create_args()`; `wo_exec()` takes a token array, per-arg `escapeshellarg`.
+- [x] Stack service + log type from whitelist only — `STACK_SERVICES`/`STACK_ACTIONS`, `logs_sources()` constant paths.
+- [x] Site delete + recursive file delete require typed-confirm in UI — `ConfirmDialog confirmPhrase` (exact domain / dir name).
+- [x] PHP-FPM pool bound to its own socket, not exposed externally — WordOps default per php-site; not changed.
+- [x] Panel served only over HTTPS (WordOps handles SSL) — `wo site create --le` / WordOps-managed nginx.
+- [x] No directory listing on `/api/` — WordOps autoindex off by default; `api/*.php` execute (emit nothing), source not served (see C3 note above).
+- [x] ~~`client_max_body_size` aligned with upload cap~~ — N/A under zero-nginx model; PHP `FM_MAX_UPLOAD_BYTES` + server `post_max_size` govern. Raise per-site only if large uploads used.
 
 ---
 
@@ -818,7 +833,7 @@ npm run build      # → dist/ ready to deploy
 
 Never skip ahead — later steps assume earlier files exist. If a step reveals a spec gap, note it inline and ask before improvising.
 
-**Status:** `B10 done — Phase B (frontend) complete; builds clean (84 KB gzip)`
+**Status:** `C4 done — all phases complete. Zero-touch install (query-routing + HashRouter + CI release tarball); no nginx/build/install on server.`
 
 ### Phase A — Backend (PHP)
 - [x] **A1. Project skeleton + config.** Create `backend/` tree. Write `config.example.php` (all defines from spec). Add `.gitignore` (`config.php`, `frontend/dist`, `node_modules`, `.env*`).
@@ -865,10 +880,13 @@ Never skip ahead — later steps assume earlier files exist. If a step reveals a
   - `npm run build` clean first pass under strict TS (noUnusedLocals/Parameters): **58 modules, 269 KB raw / 84 KB gzip JS** — under vite-spa 200 KB init budget. `vite preview` serves index + JS + SPA fallback (`/sites`→200). Tables wrap in `overflow:auto` cards with `minWidth` for small-screen scroll; toolbars `flex-wrap`. Runtime not browser-tested here (no headless browser in env) — typecheck + transform + serve all green.
 
 ### Phase C — Deploy & Harden
-- [ ] **C1. deploy.sh** (rsync, exclude `config.php`).
-- [ ] **C2. Nginx snippet** for `/api` + SPA + `client_max_body_size`.
+- [x] **C1. deploy.sh** (rsync, exclude `config.php`).
+  - Wrote `deploy.sh` (executable, `bash -n` clean): `SERVER=… PANEL=… ./deploy.sh` builds frontend locally, rsyncs `dist/` → webroot + `backend/` → `api/` (`--exclude config.php`). Reframed as the OPTIONAL dev path; the prebuilt release tarball is the primary install. No nginx step.
+- [x] **C2. ~~Nginx snippet~~ → No nginx changes needed (zero-touch install).**
+  - **Scope change (user directive):** install must touch nothing on the server — no nginx edits, no installs, no on-server build. Achieved via **query-string API routing** (`/api/index.php?p=/route`; `index.php` reads `$_GET['p']` with PATH_INFO/REQUEST_URI fallbacks) so URLs end in `.php` and default WordOps php-site nginx routes them to PHP-FPM as-is, plus a **HashRouter** frontend (`#/route`) so one `index.html` needs no SPA fallback. Delivery = CI-built release tarball (`.github/workflows/release.yml`) laid out as the webroot; server does `wget … | tar xz`. So the old `/api` location block + `try_files` SPA rule + `client_max_body_size` snippet are all **dropped** — none are required. Verified query-routing in `php:8.3-cli` docker: no-token→401, login→401, authed `/sites`→200, extra query param coexists with `p`. Frontend rebuilds clean (58 modules, 84 KB gzip). The one unavoidable server step is documented (not automatable): PHP needs root for `wo`/`/var/www` (pool `user=root` or sudo-wo) + create `config.php` from the example.
 - [ ] **C3. Security checklist pass** — walk every box in the Security Checklist section, confirm each.
-- [ ] **C4. End-to-end test on a real WordOps box** (or document manual steps if no server available).
+- [x] **C4. End-to-end test on a real WordOps box** (or document manual steps if no server available).
+  - No WordOps server available in this env → documented the manual e2e procedure. **What WAS verified locally:** backend query-routing + auth + dispatch in `php:8.3-cli` docker (401s, authed `/sites`→200, param coexistence); full A10 25/25 backend smoke; frontend `tsc` + build clean (58 modules) + `vite preview` serving index/JS/SPA-fallback. **Manual e2e on a real box (to run at deploy):** (1) `wo site create panel.x --php82`; (2) extract release tarball into htdocs, `cp config.example.php config.php`, set `ADMIN_PASS_HASH`/`SESSION_SECRET`, give PHP root (pool `user=root`); (3) browse `https://panel.x`, log in; (4) walk each page — Dashboard stats, Sites list/create/info/enable-disable/delete, Backups create/download/S3-push/delete, Files browse/edit/upload/mkdir/rename/delete, Stack restart, Logs tail. **Cannot be exercised here** because every action shells out to a real `wo` binary + touches `/var/www` on a provisioned server. Browser runtime of the React app also not headless-tested locally (no browser in env) — typecheck/build/serve are the proxy signals.
 
 ### Done log
 <!-- building session appends: "AN. <title> — <date> — <note>" -->

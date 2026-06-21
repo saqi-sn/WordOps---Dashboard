@@ -1,0 +1,48 @@
+name: release
+
+# Build the frontend and publish a ready-to-serve tarball laid out exactly as the
+# WordOps site webroot (index.html + assets/ at root, PHP API under api/).
+# Server install = wget + tar xz. No git, no build, no installs on the server.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Assemble htdocs layout
+        run: |
+          rm -rf pkg && mkdir -p pkg/api/routes
+          cp -r frontend/dist/. pkg/
+          cp backend/*.php pkg/api/
+          cp backend/routes/*.php pkg/api/routes/
+          rm -f pkg/api/config.php                       # never ship secrets
+          cp backend/config.example.php pkg/api/config.example.php
+          tar -czf wordops-gui.tar.gz -C pkg .
+          ls -la wordops-gui.tar.gz
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wordops-gui.tar.gz
+          generate_release_notes: true
