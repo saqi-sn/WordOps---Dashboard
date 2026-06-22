@@ -19,8 +19,8 @@ const EMPTY_CREATE: CreateSite = { domain: '', type: 'wp', php: '83', cache: 'fa
 export function Sites() {
   const navigate = useNavigate()
   const toast = useToast()
-  const sites = useAsync(() => api.sites.list(), [])
-  const phpVersions = useAsync(() => api.system.phpVersions().catch(() => PHP_FALLBACK), [])
+  const sites = useAsync(() => api.sites.list(), [], 'sites')
+  const phpVersions = useAsync(() => api.system.phpVersions().catch(() => PHP_FALLBACK), [], 'php-versions')
   const phpList = phpVersions.data && phpVersions.data.length ? phpVersions.data : PHP_FALLBACK
 
   const [createOpen, setCreateOpen] = useState(false)

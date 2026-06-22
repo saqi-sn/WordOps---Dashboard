@@ -10,7 +10,7 @@ type Act = 'start' | 'stop' | 'restart'
 
 export function Stack() {
   const toast = useToast()
-  const stack = useAsync(() => api.stack.status(), [])
+  const stack = useAsync(() => api.stack.status(), [], 'stack')
   const [busy, setBusy] = useState('')
 
   // Auto-refresh every 30s.

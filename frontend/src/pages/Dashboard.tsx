@@ -11,9 +11,9 @@ interface RecentBackup extends Backup { domain: string }
 
 export function Dashboard() {
   const toast = useToast()
-  const sites = useAsync(() => api.sites.list(), [])
-  const stack = useAsync(() => api.stack.status(), [])
-  const disk = useAsync(() => api.system.disk(), [])
+  const sites = useAsync(() => api.sites.list(), [], 'sites')
+  const stack = useAsync(() => api.stack.status(), [], 'stack')
+  const disk = useAsync(() => api.system.disk(), [], 'disk')
   const [recent, setRecent] = useState<RecentBackup[]>([])
   const [busySvc, setBusySvc] = useState('')
 

@@ -14,7 +14,7 @@ const BACKUP_MSGS = ['Dumping database…', 'Archiving files…', 'Compressing�
 export function Backups() {
   const toast = useToast()
   const [params, setParams] = useSearchParams()
-  const sites = useAsync(() => api.sites.list(), [])
+  const sites = useAsync(() => api.sites.list(), [], 'sites')
   const [domain, setDomain] = useState(params.get('domain') ?? '')
 
   const [backups, setBackups] = useState<Backup[]>([])
