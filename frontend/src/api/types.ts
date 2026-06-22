@@ -44,6 +44,7 @@ export interface Backup {
   size_mb: number
   created_at: number    // unix timestamp
   in_s3: boolean
+  local: boolean        // false = only in S3 (local copy deleted)
 }
 
 export interface FileEntry {

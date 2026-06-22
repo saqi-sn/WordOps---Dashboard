@@ -31,8 +31,9 @@ export function FileManager() {
   // editor state
   const [editor, setEditor] = useState<{ path: string; content: string; allowPhp: boolean } | null>(null)
   const [savingEdit, setSavingEdit] = useState(false)
-  // mkdir / rename
+  // mkdir / new file / rename
   const [mkdirOpen, setMkdirOpen] = useState(false)
+  const [newFileOpen, setNewFileOpen] = useState(false)
   const [newName, setNewName] = useState('')
   const [renameTarget, setRenameTarget] = useState<FileEntry | null>(null)
   const [renameTo, setRenameTo] = useState('')
@@ -91,6 +92,24 @@ export function FileManager() {
     }
   }
 
+  const doNewFile = async () => {
+    if (!newName) return
+    const allowPhp = /\.(php\d?|phtml|phar|cgi|pl)$/i.test(newName)
+    try {
+      const r = await api.files.write(join(path, newName), '', allowPhp)
+      if (r.ok) {
+        toast.push('File created', 'success')
+        setNewFileOpen(false)
+        const name = newName
+        setNewName('')
+        load()
+        setEditor({ path: join(path, name), content: '', allowPhp })   // open it for editing
+      } else toast.push(r.error || 'Create failed', 'error')
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Create failed', 'error')
+    }
+  }
+
   const doRename = async () => {
     if (!renameTarget || !renameTo) return
     try {
@@ -142,6 +161,7 @@ export function FileManager() {
         <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
           <button className="btn btn-default" onClick={load}>Refresh</button>
           <button className="btn btn-default" onClick={() => { setNewName(''); setMkdirOpen(true) }}>New Folder</button>
+          <button className="btn btn-default" onClick={() => { setNewName(''); setNewFileOpen(true) }}>New File</button>
           <button className="btn btn-primary" disabled={uploading} onClick={() => fileInput.current?.click()}>
             {uploading ? <><Spinner /> Uploading…</> : 'Upload'}
           </button>
@@ -239,6 +259,15 @@ export function FileManager() {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' }}>
           <button className="btn btn-default" onClick={() => setMkdirOpen(false)}>Cancel</button>
           <button className="btn btn-primary" disabled={!newName} onClick={doMkdir}>Create</button>
+        </div>
+      </Modal>
+
+      {/* New file */}
+      <Modal open={newFileOpen} title="New File" onClose={() => setNewFileOpen(false)}>
+        <input className="input" placeholder="filename.txt" autoFocus value={newName} onChange={e => setNewName(e.target.value)} style={{ marginBottom: 'var(--space-md)' }} />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-sm)' }}>
+          <button className="btn btn-default" onClick={() => setNewFileOpen(false)}>Cancel</button>
+          <button className="btn btn-primary" disabled={!newName} onClick={doNewFile}>Create &amp; edit</button>
         </div>
       </Modal>
 

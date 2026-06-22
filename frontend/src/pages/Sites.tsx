@@ -28,7 +28,7 @@ export function Sites() {
   const [creating, setCreating] = useState(false)
   const [result, setResult] = useState<CommandResult | null>(null)
 
-  const [info, setInfo] = useState<{ domain: string; data: SiteInfo } | null>(null)
+  const [info, setInfo] = useState<{ domain: string; data: SiteInfo | null } | null>(null)
   const [delTarget, setDelTarget] = useState<Site | null>(null)
   const [busyRow, setBusyRow] = useState('')
   const [deleting, setDeleting] = useState(false)
@@ -57,12 +57,14 @@ export function Sites() {
     }
   }
 
-  const action = async (domain: string, fn: () => Promise<unknown>, label: string) => {
+  // refresh=false for actions that don't change the site list (e.g. cache purge),
+  // so we don't trigger a slow `wo site list` for nothing.
+  const action = async (domain: string, fn: () => Promise<unknown>, label: string, refresh = true) => {
     setBusyRow(domain)
     try {
       await fn()
       toast.push(label, 'success')
-      sites.reload()
+      if (refresh) sites.reload()
     } catch (e) {
       toast.push(e instanceof Error ? e.message : 'Action failed', 'error')
     } finally {
@@ -71,10 +73,12 @@ export function Sites() {
   }
 
   const openInfo = async (domain: string) => {
+    setInfo({ domain, data: null })   // open modal immediately with a loader
     try {
       const data = await api.sites.info(domain)
       setInfo({ domain, data })
     } catch (e) {
+      setInfo(null)
       toast.push(e instanceof Error ? e.message : 'Info failed', 'error')
     }
   }
@@ -129,7 +133,7 @@ export function Sites() {
                     <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                       {busyRow === s.domain && <Spinner />}
                       <button className="btn btn-default" style={btnSm} onClick={() => openInfo(s.domain)}>Info</button>
-                      <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.purgeCache(s.domain), 'Cache purged')}>Purge</button>
+                      <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.purgeCache(s.domain), 'Cache purged', false)}>Purge</button>
                       {s.status === 'enabled'
                         ? <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.disable(s.domain), 'Disabled')}>Disable</button>
                         : <button className="btn btn-default" style={btnSm} onClick={() => action(s.domain, () => api.sites.enable(s.domain), 'Enabled')}>Enable</button>}
@@ -208,7 +212,8 @@ export function Sites() {
 
       {/* Info modal */}
       <Modal open={!!info} title={info ? `Info — ${info.domain}` : ''} onClose={() => setInfo(null)} width={520}>
-        {info && (
+        {info && !info.data && <div style={{ padding: 'var(--space-lg)', textAlign: 'center' }}><Spinner /> Loading…</div>}
+        {info && info.data && (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <tbody>
               {Object.entries(info.data).map(([k, v]) => (

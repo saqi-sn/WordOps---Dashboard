@@ -156,19 +156,19 @@ export function Backups() {
                 <tr key={b.filename} style={{ borderTop: '1px solid #eee' }}>
                   <td className="mono" style={{ padding: 'var(--space-sm) var(--space-md)', fontSize: 13 }}>{b.filename}</td>
                   <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{b.kind === 'database' ? 'DB' : b.kind === 'files' ? 'Files' : '—'}</td>
-                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{b.size_mb} MB</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{b.local ? `${b.size_mb} MB` : <span style={{ color: 'var(--color-text-muted)' }}>S3 only</span>}</td>
                   <td style={{ padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text-muted)', fontSize: 13 }}>
-                    {new Date(b.created_at * 1000).toLocaleString()}
+                    {b.created_at ? new Date(b.created_at * 1000).toLocaleString() : '—'}
                   </td>
                   <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{b.in_s3 ? '✓' : '—'}</td>
                   <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       {busyFile === b.filename && <Spinner />}
-                      <button className="btn btn-default" style={btnSm} onClick={() => download(b.filename)}>Download</button>
+                      <button className="btn btn-default" style={btnSm} disabled={!b.local} onClick={() => download(b.filename)}>Download</button>
                       {b.in_s3
                         ? <button className="btn btn-default" style={btnSm} onClick={() => removeS3(b.filename)}>Delete from S3</button>
                         : <button className="btn btn-default" style={btnSm} onClick={() => pushS3(b.filename)}>Push to S3</button>}
-                      <button className="btn btn-danger" style={btnSm} onClick={() => setDelTarget(b)}>Delete local</button>
+                      <button className="btn btn-danger" style={btnSm} disabled={!b.local} onClick={() => setDelTarget(b)}>Delete local</button>
                     </div>
                   </td>
                 </tr>

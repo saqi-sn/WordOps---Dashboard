@@ -73,16 +73,31 @@ function handle_backups(string $method, array $parts): void {
         if ($method === 'GET') {
             $pushed = read_s3_manifest($domain);
             $items = [];
+            $seen = [];
             foreach (glob($dir . '*') ?: [] as $p) {
                 if (!is_file($p)) continue;
                 $name = basename($p);
                 if ($name[0] === '.') continue;            // hide dotfiles/manifest
+                $seen[$name] = true;
                 $items[] = [
                     'filename'   => $name,
                     'kind'       => backup_kind($name),
                     'size_mb'    => round(filesize($p) / 1048576, 2),
                     'created_at' => filemtime($p),
                     'in_s3'      => in_array($name, $pushed, true),
+                    'local'      => true,
+                ];
+            }
+            // S3-only backups (local copy deleted) still belong in the list
+            foreach ($pushed as $name) {
+                if (isset($seen[$name])) continue;
+                $items[] = [
+                    'filename'   => $name,
+                    'kind'       => backup_kind($name),
+                    'size_mb'    => 0,
+                    'created_at' => 0,
+                    'in_s3'      => true,
+                    'local'      => false,
                 ];
             }
             usort($items, fn($a, $b) => $b['created_at'] <=> $a['created_at']);
