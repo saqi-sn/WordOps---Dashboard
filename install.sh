@@ -6,11 +6,13 @@
 #
 # SECURITY MODEL
 # --------------
-# `wo` and /var/www management need root. Rather than letting the shared
-# `www-data` user run `sudo wo` (which would let ANY compromised website on the
-# box escalate to root), this installer gives the panel its OWN php-fpm pool that
-# runs as root, on its own socket, serving ONLY this panel. No sudoers rule is
-# created, so other websites gain nothing. The panel itself is login-gated.
+# `wo` and /var/www management need root. The shared `www-data` user must NOT get
+# `sudo wo` (that would let ANY compromised website on the box escalate to root).
+# Ubuntu php-fpm also refuses to run a pool as root. So the panel runs in its own
+# php-fpm pool as a dedicated non-root user `wopanel`:
+#   * only `wopanel` may `sudo wo` (scoped sudoers) — other sites cannot escalate
+#   * the file manager reaches all of /var/www via ACLs granted to `wopanel`
+#   * the panel is login-gated; a panel compromise is the only escalation path
 #
 # If it can't set up the dedicated pool (unexpected nginx layout), it falls back
 # to a `sudo wo` rule scoped to the web user and prints a security warning.
@@ -87,12 +89,33 @@ setup_dedicated_pool() {
   pool="$pooldir/wordops-gui.conf"
   upstream="/etc/nginx/conf.d/wordops-gui-upstream.conf"
 
-  # 1. dedicated root pool (clean minimal conf — no open_basedir/disable_functions)
+  # Ubuntu php-fpm REFUSES root pools ("please specify user and group other than
+  # root"), so the panel runs as a dedicated NON-root user `wopanel`. Only wopanel
+  # may `sudo wo` (scoped sudoers) — other websites (www-data) cannot escalate.
+  # File-manager access to all of /var/www is granted via ACLs, not by making the
+  # panel www-data or root.
+  local panel_user="wopanel"
+  id "$panel_user" >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin "$panel_user"
+  usermod -aG www-data "$panel_user" || true
+  usermod -aG adm "$panel_user" || true     # read /var/log/* (Logs page)
+
+  # ACLs so the panel (wopanel) can read/write every site under /var/www without
+  # owning the files. Default ACL covers files created later (incl. by `wo`).
+  command -v setfacl >/dev/null 2>&1 || { DEBIAN_FRONTEND=noninteractive apt-get install -y acl >/dev/null 2>&1 || true; }
+  if command -v setfacl >/dev/null 2>&1; then
+    setfacl -R  -m "u:$panel_user:rwX" /var/www 2>/dev/null || true
+    setfacl -R -d -m "u:$panel_user:rwX" /var/www 2>/dev/null || true
+  else
+    echo ">> WARN: setfacl unavailable — file manager may not write other sites' files"
+  fi
+
+  # 1. dedicated non-root pool (clean minimal conf)
   cat > "$pool" <<EOF
-; WordOps GUI — dedicated pool, runs as root, serves ONLY the panel.
+; WordOps GUI — dedicated pool. Runs as $panel_user (NOT root, NOT www-data),
+; serves ONLY the panel. $panel_user may sudo wo (scoped); other sites cannot.
 [wordops-gui]
-user = root
-group = root
+user = $panel_user
+group = $panel_user
 listen = $sock
 listen.owner = www-data
 listen.group = www-data
@@ -114,15 +137,19 @@ EOF
     sed -i 's#[[:space:]]*include common/php[0-9]\+\.conf;#    location / {\n        try_files $uri $uri/ /index.php$is_args$args;\n    }\n    location ~ \\.php$ {\n        try_files $uri =404;\n        include fastcgi_params;\n        fastcgi_pass wordopsgui;\n    }#' "$SITE_CONF"
   fi
 
-  # 4. ProtectSystem fix for this fpm service
+  # 4. ProtectSystem fix: even `sudo wo` (root) spawned from php-fpm inherits the
+  #    service's read-only /etc, so it still needs re-granting.
   fix_protectsystem "$fpmsvc"
 
-  # 5. panel runs as root pool -> no sudo, no sudoers rule
-  set_config WO_SUDO false
-  rm -f /etc/sudoers.d/wordops-gui
+  # 5. scoped sudoers — ONLY wopanel may run wo as root
+  local sudoers="/etc/sudoers.d/wordops-gui"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$panel_user" "$WO_BIN" > "$sudoers"
+  chmod 440 "$sudoers"; visudo -cf "$sudoers" >/dev/null
+  set_config WO_SUDO true
 
-  # 6. ownership (nginx serves static as www-data; root pool writes regardless)
-  chown -R www-data:www-data "$HTDOCS"
+  # 6. ownership (panel files owned by wopanel; nginx serves static as www-data group)
+  chown -R "$panel_user:www-data" "$HTDOCS"
+  chmod -R g+rX "$HTDOCS"
 
   # 7. apply — validate everything BEFORE touching the running service, and roll
   #    back cleanly on any failure so php-fpm is never left with a broken pool.
@@ -145,8 +172,9 @@ EOF
   [ -S "$sock" ] || { rollback "panel socket $sock not created"; return 1; }
 
   echo ""
-  echo ">> SECURE install complete — dedicated ROOT pool 'wordops-gui' on $sock"
-  echo ">> php service: $fpmsvc   |   no sudoers rule created (other sites can't escalate)"
+  echo ">> SECURE install complete — panel runs as '$panel_user' (non-root) on $sock"
+  echo ">> php service: $fpmsvc   |   only '$panel_user' may sudo wo (other sites cannot escalate)"
+  echo ">> file manager reaches /var/www via ACLs for '$panel_user'"
   return 0
 }
 
