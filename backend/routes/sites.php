@@ -128,8 +128,10 @@ function handle_sites(string $method, array $parts): void {
     }
 
     // POST /sites/{domain}/cache/purge
+    // WordOps has no per-site purge flag; `wo clean --all` flushes all caches
+    // (fastcgi, opcache, redis, memcache). Domain is validated but not passed.
     if ($sub === 'cache' && ($parts[3] ?? '') === 'purge' && $method === 'POST') {
-        $r = wo_exec(['site', 'update', $domain, '--purge-cache']);
+        $r = wo_exec(['clean', '--all']);
         sites_out(cmd_response($r), $r['ok'] ? 200 : 500);
     }
 

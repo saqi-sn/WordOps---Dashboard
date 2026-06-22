@@ -51,14 +51,17 @@ ensure_gitconfig() {
   fi
 }
 
-# Re-grant /etc as writable for php-fpm: WordOps ships ProtectSystem=full, which
-# mounts /etc read-only for php-fpm and every child (incl. wo), breaking
-# `wo site create`. Unix perms still apply (only the root pool can write /etc).
+# WordOps ships php-fpm with systemd ProtectSystem=full, which mounts /etc
+# read-only for php-fpm and every child (incl. `sudo wo`), so `wo site create`
+# fails with "Read-only file system: /etc/nginx/...". ReadWritePaths=/etc does
+# NOT reliably carve /etc back out here, so disable ProtectSystem for php-fpm.
+# Safe: unix perms still apply — www-data sites can't write /etc; only the
+# scoped `sudo wo` (root) can, which is exactly what WordOps needs.
 fix_protectsystem() {
   local svc="$1" d
   d="/etc/systemd/system/${svc}.d"
   mkdir -p "$d"
-  printf '[Service]\nReadWritePaths=/etc\n' > "$d/wordops-gui.conf"
+  printf '[Service]\nProtectSystem=false\n' > "$d/wordops-gui.conf"
   systemctl daemon-reload
 }
 
