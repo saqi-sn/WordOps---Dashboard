@@ -28,6 +28,16 @@ export interface PhpVersion {
   label: string  // e.g. "8.3"
 }
 
+export interface S3Settings {
+  endpoint: string
+  region: string
+  bucket: string
+  key: string
+  prefix: string
+  has_secret: boolean
+  enabled: boolean
+}
+
 export interface Backup {
   filename: string
   kind: 'database' | 'files' | 'other'

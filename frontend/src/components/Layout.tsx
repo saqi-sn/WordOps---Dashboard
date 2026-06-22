@@ -10,6 +10,7 @@ const NAV = [
   { to: '/files', label: 'Files' },
   { to: '/stack', label: 'Stack' },
   { to: '/logs', label: 'Logs' },
+  { to: '/settings', label: 'Settings' },
 ]
 
 export function Layout() {

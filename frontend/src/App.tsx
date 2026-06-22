@@ -3,12 +3,14 @@ import { auth } from './auth'
 import { ToastProvider } from './components/Toast'
 import { Layout } from './components/Layout'
 import { Login } from './pages/Login'
+import { Setup } from './pages/Setup'
 import { Dashboard } from './pages/Dashboard'
 import { Sites } from './pages/Sites'
 import { Backups } from './pages/Backups'
 import { FileManager } from './pages/FileManager'
 import { Stack } from './pages/Stack'
 import { Logs } from './pages/Logs'
+import { Settings } from './pages/Settings'
 import type { ReactNode } from 'react'
 
 function RequireAuth({ children }: { children: ReactNode }) {
@@ -21,6 +23,7 @@ export default function App() {
     <ToastProvider>
       <Routes>
         <Route path="/login" element={<Login />} />
+        <Route path="/setup" element={<Setup />} />
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
           <Route path="/" element={<Dashboard />} />
           <Route path="/sites" element={<Sites />} />
@@ -28,6 +31,7 @@ export default function App() {
           <Route path="/files" element={<FileManager />} />
           <Route path="/stack" element={<Stack />} />
           <Route path="/logs" element={<Logs />} />
+          <Route path="/settings" element={<Settings />} />
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

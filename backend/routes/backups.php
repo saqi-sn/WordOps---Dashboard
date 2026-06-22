@@ -122,7 +122,7 @@ function handle_backups(string $method, array $parts): void {
 
     // POST .../{file}/s3  -> push
     if ($action === 's3' && $method === 'POST') {
-        if (S3_BUCKET === '') backups_out(['error' => 'S3 not configured'], 400);
+        if (!s3_enabled()) backups_out(['error' => 'S3 not configured'], 400);
         if (!function_exists('s3_put_file')) backups_out(['error' => 'S3 support not installed'], 501);
         if ($path === false || !is_file($path)) backups_out(['error' => 'Backup not found'], 404);
         $key = $domain . '/' . basename($file);

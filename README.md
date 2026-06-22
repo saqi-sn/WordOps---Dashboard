@@ -28,14 +28,13 @@ sudo sh -c 'wget -qO- https://github.com/saqi-sn/WordOps---Dashboard/releases/la
 
 # 3. Run the installer (handles all privilege/security setup — see below)
 sudo bash install.sh
-
-# 4. Set the admin login + secret (the only manual edit)
-php -r "echo password_hash('YOUR_PASSWORD', PASSWORD_DEFAULT), PHP_EOL;"   # -> ADMIN_PASS_HASH
-openssl rand -hex 32                                                       # -> SESSION_SECRET
-sudo nano api/config.php
 ```
 
-Then open `https://panel.example.com` and log in.
+Then open `https://panel.example.com`. **On first visit you create the admin
+account** (username, password, email) right in the browser — no passwords to edit
+by hand. Configure **S3 backups** anytime from the panel's **Settings** page.
+Admin credentials and S3 settings live in `api/data/settings.json` (gitignored,
+never shipped); `config.php` holds only paths.
 
 ### What `install.sh` does (security model)
 

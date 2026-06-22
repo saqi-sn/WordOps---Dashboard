@@ -72,6 +72,8 @@ if [ ! -f "$API/config.php" ]; then
   cp "$API/config.example.php" "$API/config.php"
   echo ">> created api/config.php from template"
 fi
+# writable store for the admin account (first-run) + S3 settings
+mkdir -p "$API/data"
 
 # --- secure path: dedicated root pool ----------------------------------------
 
@@ -223,11 +225,11 @@ fi
 
 cat <<EOF
 
-Final manual step — set the admin login + secret:
+Done. No passwords to edit by hand.
 
-  sudo nano $API/config.php
-    ADMIN_PASS_HASH  ->  php -r "echo password_hash('YOUR_PASS', PASSWORD_DEFAULT);"
-    SESSION_SECRET   ->  openssl rand -hex 32
+  Open  https://$PANEL_DOMAIN  in your browser.
+  On first visit you'll be asked to create the admin account (username,
+  password, email). After that, log in with those credentials.
 
-Then open https://$PANEL_DOMAIN and log in.
+  Configure S3 backups later from the panel's Settings page.
 EOF

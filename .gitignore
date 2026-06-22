@@ -17,3 +17,6 @@ node_modules/
 
 # internal build plan / notes — not public
 CLAUDE.md
+
+# runtime settings store (admin creds, S3) — never commit
+backend/data/

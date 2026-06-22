@@ -1,7 +1,7 @@
 import { auth } from '../auth'
 import type {
   Site, SiteInfo, CreateSite, Backup, FileEntry,
-  StackStatus, DiskInfo, UptimeInfo, LogResponse, CommandResult, PhpVersion,
+  StackStatus, DiskInfo, UptimeInfo, LogResponse, CommandResult, PhpVersion, S3Settings,
 } from './types'
 
 // API entry. Query-string routing: every call hits /api/index.php?p=/route so the
@@ -93,11 +93,16 @@ export const api = {
   download,
   upload,
   auth: {
+    status: () => request<{ setup: boolean }>('/auth/status'),
+    setup: (username: string, password: string, email: string) =>
+      request<{ token: string; expires_in: number }>('/auth/setup', {
+        method: 'POST', body: JSON.stringify({ username, password, email }),
+      }),
     login: (username: string, password: string) =>
       request<{ token: string; expires_in: number }>('/auth/login', {
         method: 'POST', body: JSON.stringify({ username, password }),
       }),
-    me: () => request<{ user: string }>('/auth/me'),
+    me: () => request<{ user: string; email?: string }>('/auth/me'),
   },
   sites: {
     list: () => request<{ sites: Site[] }>('/sites').then(r => r.sites),
@@ -159,6 +164,14 @@ export const api = {
     disk: () => request<DiskInfo>('/system/disk'),
     uptime: () => request<UptimeInfo>('/system/uptime'),
     phpVersions: () => request<{ versions: PhpVersion[] }>('/system/php-versions').then(r => r.versions),
+  },
+  settings: {
+    getS3: () => request<S3Settings>('/settings/s3'),
+    saveS3: (s: Partial<S3Settings> & { secret?: string; clear_secret?: boolean }) =>
+      request<CommandResult & { enabled: boolean }>('/settings/s3', { method: 'POST', body: JSON.stringify(s) }),
+    getAccount: () => request<{ user: string; email: string }>('/settings/account'),
+    saveAccount: (current_password: string, patch: { email?: string; password?: string }) =>
+      request<CommandResult>('/settings/account', { method: 'POST', body: JSON.stringify({ current_password, ...patch }) }),
   },
 }
 

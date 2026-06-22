@@ -10,6 +10,7 @@
 // params (path, lines, recursive) are read normally by the route handlers.
 
 require __DIR__ . '/config.php';
+require __DIR__ . '/settings.php';
 require __DIR__ . '/auth.php';
 require __DIR__ . '/wo.php';
 // s3.php is optional until A8 lands; include when present.
@@ -41,10 +42,12 @@ function not_found(): void {
     exit;
 }
 
-// --- public: login ---
-if (($parts[0] ?? '') === 'auth' && ($parts[1] ?? '') === 'login' && $method === 'POST') {
-    auth_login();
-    exit;
+// --- public: first-run status, setup, login ---
+if (($parts[0] ?? '') === 'auth') {
+    $sub = $parts[1] ?? '';
+    if ($sub === 'status' && $method === 'GET')  { auth_status(); exit; }
+    if ($sub === 'setup'  && $method === 'POST') { auth_setup();  exit; }
+    if ($sub === 'login'  && $method === 'POST') { auth_login();  exit; }
 }
 
 // --- everything below requires a valid token ---
@@ -66,6 +69,7 @@ $route = match (true) {
     $top === 'logs'                                      => 'logs',
     $top === 'files'                                     => 'files',
     $top === 'system'                                    => 'system',
+    $top === 'settings'                                  => 'settings',
     default                                              => null,
 };
 

@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../api/client'
 import { auth } from '../auth'
@@ -11,6 +11,11 @@ export function Login() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+
+  // First run? send to setup.
+  useEffect(() => {
+    api.auth.status().then(s => { if (!s.setup) navigate('/setup', { replace: true }) }).catch(() => {})
+  }, [navigate])
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
