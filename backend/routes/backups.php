@@ -45,6 +45,12 @@ function add_to_s3_manifest(string $domain, string $filename): void {
     @file_put_contents($f, json_encode(array_values($list)), LOCK_EX);
 }
 
+function remove_from_s3_manifest(string $domain, string $filename): void {
+    $f = backup_dir($domain) . S3_MANIFEST;
+    $list = array_values(array_filter(read_s3_manifest($domain), fn($x) => $x !== $filename));
+    @file_put_contents($f, json_encode($list), LOCK_EX);
+}
+
 // classify a backup file by name
 function backup_kind(string $name): string {
     if (str_starts_with($name, 'db-'))    return 'database';
@@ -120,18 +126,32 @@ function handle_backups(string $method, array $parts): void {
     // item: a specific backup file
     $path = safe_backup_path($domain, $file);
 
-    // POST .../{file}/s3  -> push
-    if ($action === 's3' && $method === 'POST') {
+    // .../{file}/s3  -> POST push, DELETE remove-from-S3
+    if ($action === 's3') {
         if (!s3_enabled()) backups_out(['error' => 'S3 not configured'], 400);
         if (!function_exists('s3_put_file')) backups_out(['error' => 'S3 support not installed'], 501);
-        if ($path === false || !is_file($path)) backups_out(['error' => 'Backup not found'], 404);
         $key = $domain . '/' . basename($file);
-        $res = s3_put_file($path, $key);
-        if (!empty($res['ok'])) {
-            add_to_s3_manifest($domain, basename($file));
-            backups_out(['ok' => true, 'key' => $res['key']]);
+
+        if ($method === 'POST') {
+            if ($path === false || !is_file($path)) backups_out(['error' => 'Backup not found'], 404);
+            $res = s3_put_file($path, $key);
+            if (!empty($res['ok'])) {
+                add_to_s3_manifest($domain, basename($file));
+                backups_out(['ok' => true, 'key' => $res['key']]);
+            }
+            backups_out(['ok' => false, 'error' => $res['error'] ?? 'S3 upload failed'], 502);
         }
-        backups_out(['ok' => false, 'error' => $res['error'] ?? 'S3 upload failed'], 502);
+
+        if ($method === 'DELETE') {
+            $res = s3_delete_file($key);
+            if (!empty($res['ok'])) {
+                remove_from_s3_manifest($domain, basename($file));
+                backups_out(['ok' => true]);
+            }
+            backups_out(['ok' => false, 'error' => $res['error'] ?? 'S3 delete failed'], 502);
+        }
+
+        backups_out(['error' => 'Method not allowed'], 405);
     }
 
     if ($path === false || !is_file($path)) backups_out(['error' => 'Backup not found'], 404);

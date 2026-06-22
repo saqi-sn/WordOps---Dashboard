@@ -23,6 +23,7 @@ export function Backups() {
   const [busyFile, setBusyFile] = useState('')
   const [delTarget, setDelTarget] = useState<Backup | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [offerLocal, setOfferLocal] = useState<string | null>(null)
 
   // Default the selector to the first site once the list loads.
   useEffect(() => {
@@ -69,12 +70,38 @@ export function Backups() {
     setBusyFile(f)
     try {
       const r = await api.backups.pushS3(domain, f)
-      if (r.ok) { toast.push('Pushed to S3', 'success'); load(domain) }
+      if (r.ok) { toast.push('Pushed to S3', 'success'); load(domain); setOfferLocal(f) }
       else toast.push(r.error || 'S3 push failed', 'error')
     } catch (e) {
       toast.push(e instanceof Error ? e.message : 'S3 push failed', 'error')
     } finally {
       setBusyFile('')
+    }
+  }
+
+  const removeS3 = async (f: string) => {
+    setBusyFile(f)
+    try {
+      const r = await api.backups.deleteS3(domain, f)
+      if (r.ok) { toast.push('Removed from S3', 'success'); load(domain) }
+      else toast.push(r.error || 'S3 delete failed', 'error')
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'S3 delete failed', 'error')
+    } finally {
+      setBusyFile('')
+    }
+  }
+
+  const deleteLocalNow = async () => {
+    const f = offerLocal
+    setOfferLocal(null)
+    if (!f) return
+    try {
+      await api.backups.delete(domain, f)
+      toast.push('Local copy deleted', 'success')
+      load(domain)
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'Delete failed', 'error')
     }
   }
 
@@ -138,8 +165,10 @@ export function Backups() {
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                       {busyFile === b.filename && <Spinner />}
                       <button className="btn btn-default" style={btnSm} onClick={() => download(b.filename)}>Download</button>
-                      <button className="btn btn-default" style={btnSm} disabled={b.in_s3} onClick={() => pushS3(b.filename)}>Push to S3</button>
-                      <button className="btn btn-danger" style={btnSm} onClick={() => setDelTarget(b)}>Delete</button>
+                      {b.in_s3
+                        ? <button className="btn btn-default" style={btnSm} onClick={() => removeS3(b.filename)}>Delete from S3</button>
+                        : <button className="btn btn-default" style={btnSm} onClick={() => pushS3(b.filename)}>Push to S3</button>}
+                      <button className="btn btn-danger" style={btnSm} onClick={() => setDelTarget(b)}>Delete local</button>
                     </div>
                   </td>
                 </tr>
@@ -161,6 +190,15 @@ export function Backups() {
         busy={deleting}
         onConfirm={doDelete}
         onCancel={() => !deleting && setDelTarget(null)}
+      />
+
+      <ConfirmDialog
+        open={!!offerLocal}
+        title="Delete local copy?"
+        message={`${offerLocal} is now stored in S3. Delete the local copy to free disk space? (You can re-download it from S3 later.)`}
+        confirmLabel="Delete local"
+        onConfirm={deleteLocalNow}
+        onCancel={() => setOfferLocal(null)}
       />
     </div>
   )

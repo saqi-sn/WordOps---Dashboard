@@ -4,7 +4,7 @@ A lightweight web admin panel for [WordOps](https://wordops.net).
 
 - **Backend:** Pure PHP 8.x — no Composer, no frameworks (S3 via hand-rolled SigV4)
 - **Frontend:** React + Vite — compiled locally, deployed as static files
-- **Auth:** Single admin — login form, password hash in config, HMAC session token
+- **Auth:** Single admin — created on first run, HMAC session token (7-day)
 - **Design:** Illustration style — bold borders, flat shadows, warm palette
 
 ## Install on a WordOps server
@@ -17,7 +17,7 @@ Requires WordOps on Ubuntu/Debian (systemd).
 
 ```bash
 # 1. Create a PHP site for the panel (this configures nginx + PHP-FPM for you)
-wo site create panel.example.com --php82 --le      # --le = Let's Encrypt SSL (DNS must point here)
+wo site create panel.example.com --php --le              # --le = Let's Encrypt SSL (DNS must point here)
 
 # 2. Drop the prebuilt app into the webroot.
 #    Run the whole pipe as root so tar can write; --no-overwrite-dir avoids a

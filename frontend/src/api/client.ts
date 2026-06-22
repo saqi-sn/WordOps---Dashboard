@@ -125,6 +125,9 @@ export const api = {
     pushS3: (d: string, f: string) =>
       request<{ ok: boolean; key?: string; error?: string }>(
         `/sites/${d}/backups/${encodeURIComponent(f)}/s3`, { method: 'POST' }),
+    deleteS3: (d: string, f: string) =>
+      request<{ ok: boolean; error?: string }>(
+        `/sites/${d}/backups/${encodeURIComponent(f)}/s3`, { method: 'DELETE' }),
   },
   files: {
     list: (path = '') =>
@@ -169,6 +172,7 @@ export const api = {
     getS3: () => request<S3Settings>('/settings/s3'),
     saveS3: (s: Partial<S3Settings> & { secret?: string; clear_secret?: boolean }) =>
       request<CommandResult & { enabled: boolean }>('/settings/s3', { method: 'POST', body: JSON.stringify(s) }),
+    testS3: () => request<{ ok: boolean; key?: string; error?: string }>('/settings/s3/test', { method: 'POST' }),
     getAccount: () => request<{ user: string; email: string }>('/settings/account'),
     saveAccount: (current_password: string, patch: { email?: string; password?: string }) =>
       request<CommandResult>('/settings/account', { method: 'POST', body: JSON.stringify({ current_password, ...patch }) }),

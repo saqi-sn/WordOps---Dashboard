@@ -14,6 +14,18 @@ function settings_out(array $data, int $code = 200): void {
 function handle_settings(string $method, array $parts): void {
     $sub = $parts[1] ?? '';
 
+    // --- S3 connection test: upload a tiny marker object with the SAVED config ---
+    if ($sub === 's3' && ($parts[2] ?? '') === 'test' && $method === 'POST') {
+        if (!function_exists('s3_put_file')) settings_out(['ok' => false, 'error' => 'S3 support not installed'], 501);
+        if (!s3_enabled()) settings_out(['ok' => false, 'error' => 'Set a bucket and Save before testing'], 400);
+        $tmp = tempnam(sys_get_temp_dir(), 's3t');
+        file_put_contents($tmp, 'wordops-gui connection test ' . gmdate('c') . "\n");
+        $res = s3_put_file($tmp, '.connection-test.txt');
+        @unlink($tmp);
+        if (!empty($res['ok'])) settings_out(['ok' => true, 'key' => $res['key']]);
+        settings_out(['ok' => false, 'error' => $res['error'] ?? 'Upload failed'], 502);
+    }
+
     // --- S3 ---
     if ($sub === 's3') {
         if ($method === 'GET') {

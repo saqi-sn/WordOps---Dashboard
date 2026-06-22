@@ -12,6 +12,7 @@ export function Settings() {
   const [s3, setS3] = useState<S3Settings | null>(null)
   const [secret, setSecret] = useState('')
   const [savingS3, setSavingS3] = useState(false)
+  const [testingS3, setTestingS3] = useState(false)
 
   useEffect(() => {
     api.settings.getS3().then(setS3).catch(e => toast.push(e instanceof Error ? e.message : 'Load failed', 'error'))
@@ -35,6 +36,19 @@ export function Settings() {
       toast.push(e instanceof Error ? e.message : 'Save failed', 'error')
     } finally {
       setSavingS3(false)
+    }
+  }
+
+  const testS3 = async () => {
+    setTestingS3(true)
+    try {
+      const r = await api.settings.testS3()
+      if (r.ok) toast.push('S3 connection OK — test object uploaded', 'success')
+      else toast.push(r.error || 'S3 test failed', 'error')
+    } catch (e) {
+      toast.push(e instanceof Error ? e.message : 'S3 test failed', 'error')
+    } finally {
+      setTestingS3(false)
     }
   }
 
@@ -88,7 +102,10 @@ export function Settings() {
               <input className="input" type="password" placeholder={s3.has_secret ? '••••••••' : ''} value={secret} onChange={e => setSecret(e.target.value)} /></label>
             <label style={lbl}><div className="section-label">Key prefix</div>
               <input className="input" placeholder="wordops-backups/" value={s3.prefix} onChange={e => s3set('prefix', e.target.value)} /></label>
-            <button className="btn btn-primary" disabled={savingS3} onClick={saveS3}>{savingS3 ? <Spinner /> : 'Save S3 settings'}</button>
+            <div style={{ display: 'flex', gap: 'var(--space-sm)' }}>
+              <button className="btn btn-primary" disabled={savingS3} onClick={saveS3}>{savingS3 ? <Spinner /> : 'Save S3 settings'}</button>
+              <button className="btn btn-default" disabled={testingS3 || !s3.enabled} onClick={testS3} title={s3.enabled ? 'Upload a small test object' : 'Save a bucket first'}>{testingS3 ? <Spinner /> : 'Test connection'}</button>
+            </div>
           </div>
         )}
       </Card>
