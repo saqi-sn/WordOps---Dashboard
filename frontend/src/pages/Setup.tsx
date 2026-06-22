@@ -14,8 +14,9 @@ export function Setup() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // If already set up, this page shouldn't show — bounce to login.
+  // Already logged in, or already set up? This page shouldn't show.
   useEffect(() => {
+    if (auth.isAuthed()) { navigate('/', { replace: true }); return }
     api.auth.status().then(s => { if (s.setup) navigate('/login', { replace: true }) }).catch(() => {})
   }, [navigate])
 

@@ -13,7 +13,7 @@ function b64url_decode(string $s): string {
 }
 
 function session_ttl(): int {
-    return defined('SESSION_TTL') ? SESSION_TTL : 86400;
+    return defined('SESSION_TTL') ? SESSION_TTL : 604800;   // 7 days
 }
 
 // --- token issue / verify ---

@@ -101,10 +101,19 @@ WordOps box, run `php -S 127.0.0.1:8080 backend/index.php` with a test `backend/
 
 ## Features
 
+- **First-run setup** — create the admin account in the browser (no secrets in config)
 - Site list with status, PHP version, cache type, SSL info
-- Site create (guarded) + delete (typed-confirm)
-- Per-site backups: create, list, download, delete + manual push to S3 (S3-compatible)
+- Site create (guarded) — PHP version list from what's actually installed; optional WP
+  admin user/pass/email (blank = WordOps default); admin password shown once after create
+- Site delete (typed-confirm), enable/disable, cache purge
+- **Backups** — separate **Database** (`wp db export`) and **Files** (`tar`) backups stored in
+  `/var/www/backups/{domain}/`; download, delete, manual push to **S3** (any S3-compatible provider)
+- **Settings page** — S3 credentials + change admin email/password
 - Jailed file manager under `/var/www` — browse, edit, upload, download, rename, delete
 - Stack service status (Nginx, PHP, MySQL, Redis) with start/stop/restart controls
 - Log viewer (Nginx, PHP, MySQL)
 - System disk usage and uptime
+- Data cached client-side — pages don't refetch on every navigation, only on Refresh
+
+> Sessions last 7 days; admin account + S3 config are stored server-side in
+> `api/data/settings.json` (gitignored).

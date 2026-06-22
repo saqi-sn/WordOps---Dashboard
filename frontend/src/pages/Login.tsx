@@ -12,8 +12,9 @@ export function Login() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  // First run? send to setup.
+  // Already logged in -> dashboard. First run -> setup.
   useEffect(() => {
+    if (auth.isAuthed()) { navigate('/', { replace: true }); return }
     api.auth.status().then(s => { if (!s.setup) navigate('/setup', { replace: true }) }).catch(() => {})
   }, [navigate])
 
