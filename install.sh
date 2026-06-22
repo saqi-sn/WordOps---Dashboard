@@ -124,17 +124,25 @@ EOF
   # 6. ownership (nginx serves static as www-data; root pool writes regardless)
   chown -R www-data:www-data "$HTDOCS"
 
-  # 7. apply
-  systemctl restart "$fpmsvc"
-  if nginx -t >/dev/null 2>&1; then
-    systemctl reload nginx
-  else
-    echo ">> ERROR: nginx -t failed — restoring site conf"
+  # 7. apply — validate everything BEFORE touching the running service, and roll
+  #    back cleanly on any failure so php-fpm is never left with a broken pool.
+  rollback() {
+    echo ">> $1 — rolling back dedicated-pool changes"
+    rm -f "$pool" "$upstream"
     [ -f "$SITE_CONF.wogui.bak" ] && mv "$SITE_CONF.wogui.bak" "$SITE_CONF"
-    systemctl reload nginx || true
-    return 1
+    systemctl reload nginx >/dev/null 2>&1 || true
+  }
+  if ! php-fpm"$dotver" -t >/dev/null 2>&1 && ! "php-fpm$dotver" -t >/dev/null 2>&1; then
+    rollback "php-fpm config test failed"; return 1
   fi
-  [ -S "$sock" ] || { echo ">> ERROR: panel socket $sock not created"; return 1; }
+  if ! nginx -t >/dev/null 2>&1; then
+    rollback "nginx -t failed"; return 1
+  fi
+  if ! systemctl restart "$fpmsvc"; then
+    rollback "php-fpm failed to start"; return 1
+  fi
+  systemctl reload nginx
+  [ -S "$sock" ] || { rollback "panel socket $sock not created"; return 1; }
 
   echo ""
   echo ">> SECURE install complete — dedicated ROOT pool 'wordops-gui' on $sock"
