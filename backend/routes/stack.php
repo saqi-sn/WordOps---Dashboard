@@ -33,7 +33,11 @@ function handle_stack(string $method, array $parts): void {
     // GET /stack/status
     if (($parts[1] ?? '') === 'status' && $method === 'GET') {
         $r = wo_exec(['stack', 'status']);
-        stack_out(['services' => parse_stack_status($r['output']), 'output' => $r['output']]);
+        $services = parse_stack_status($r['output']);
+        if (!$r['ok'] && count($services) === 0) {
+            stack_out(cmd_response($r, ['services' => []]), 500);
+        }
+        stack_out(['services' => $services, 'output' => $r['output']]);
     }
 
     // POST /stack/{service}/{action}
@@ -44,7 +48,7 @@ function handle_stack(string $method, array $parts): void {
             stack_out(['error' => 'Invalid service'], 400);
         }
         $r = wo_exec(['stack', $action, $service]);
-        stack_out(['ok' => $r['ok'], 'output' => $r['output']], $r['ok'] ? 200 : 500);
+        stack_out(cmd_response($r), $r['ok'] ? 200 : 500);
     }
 
     stack_out(['error' => 'Not found'], 404);

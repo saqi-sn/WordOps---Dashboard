@@ -74,14 +74,27 @@ function handle_sites(string $method, array $parts): void {
     if ($domain === '') {
         if ($method === 'GET') {
             $r = wo_exec(['site', 'list']);
-            sites_out(['sites' => parse_site_list($r['output']), 'output' => $r['output']]);
+            $sites = parse_site_list($r['output']);
+            // wo failed AND nothing parsed -> surface the error instead of an empty table
+            if (!$r['ok'] && count($sites) === 0) {
+                sites_out(cmd_response($r, ['sites' => []]), 500);
+            }
+            sites_out(['sites' => $sites, 'output' => $r['output']]);
         }
         if ($method === 'POST') {
             $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
             $args = build_create_args($body);            // validates + 400s on bad input
             $r = wo_exec($args);
-            $ok = $r['ok'] || str_contains($r['output'], 'Successfully created site');
-            sites_out(['ok' => $ok, 'output' => $r['output']], $ok ? 200 : 500);
+            // wo create can exit nonzero on partial steps; trust the explicit success
+            // line, and treat WordOps' "serious error" banner as a hard failure.
+            $success = str_contains($r['output'], 'Successfully created site');
+            $failed  = stripos($r['output'], 'serious error') !== false
+                    || stripos($r['output'], 'error encountered') !== false;
+            $ok = $success || ($r['ok'] && !$failed);
+            if ($ok) {
+                sites_out(['ok' => true, 'output' => $r['output']]);
+            }
+            sites_out(cmd_response(['ok' => false, 'output' => $r['output'], 'code' => $r['code']]), 500);
         }
         sites_out(['error' => 'Method not allowed'], 405);
     }
@@ -92,31 +105,32 @@ function handle_sites(string $method, array $parts): void {
     // DELETE /sites/{domain}
     if ($sub === '' && $method === 'DELETE') {
         $r = wo_exec(['site', 'delete', $domain, '--no-prompt']);
-        sites_out(['ok' => $r['ok'], 'output' => $r['output']], $r['ok'] ? 200 : 500);
+        sites_out(cmd_response($r), $r['ok'] ? 200 : 500);
     }
 
     // GET /sites/{domain}/info
     if ($sub === 'info' && $method === 'GET') {
         $r = wo_exec(['site', 'info', $domain]);
-        sites_out(['info' => parse_site_info($r['output']), 'output' => $r['output']], $r['ok'] ? 200 : 500);
+        if (!$r['ok']) sites_out(cmd_response($r, ['info' => []]), 500);
+        sites_out(['info' => parse_site_info($r['output']), 'output' => $r['output']]);
     }
 
     // POST /sites/{domain}/enable
     if ($sub === 'enable' && $method === 'POST') {
         $r = wo_exec(['site', 'enable', $domain]);
-        sites_out(['ok' => $r['ok'], 'output' => $r['output']], $r['ok'] ? 200 : 500);
+        sites_out(cmd_response($r), $r['ok'] ? 200 : 500);
     }
 
     // POST /sites/{domain}/disable
     if ($sub === 'disable' && $method === 'POST') {
         $r = wo_exec(['site', 'disable', $domain]);
-        sites_out(['ok' => $r['ok'], 'output' => $r['output']], $r['ok'] ? 200 : 500);
+        sites_out(cmd_response($r), $r['ok'] ? 200 : 500);
     }
 
     // POST /sites/{domain}/cache/purge
     if ($sub === 'cache' && ($parts[3] ?? '') === 'purge' && $method === 'POST') {
         $r = wo_exec(['site', 'update', $domain, '--purge-cache']);
-        sites_out(['ok' => $r['ok'], 'output' => $r['output']], $r['ok'] ? 200 : 500);
+        sites_out(cmd_response($r), $r['ok'] ? 200 : 500);
     }
 
     sites_out(['error' => 'Not found'], 404);

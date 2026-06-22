@@ -64,7 +64,7 @@ function handle_backups(string $method, array $parts): void {
         }
         if ($method === 'POST') {
             $r = wo_exec(['site', 'backup', $domain]);
-            backups_out(['ok' => $r['ok'], 'output' => $r['output']], $r['ok'] ? 200 : 500);
+            backups_out(cmd_response($r), $r['ok'] ? 200 : 500);
         }
         backups_out(['error' => 'Method not allowed'], 405);
     }

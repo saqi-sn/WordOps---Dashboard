@@ -24,6 +24,16 @@ function wo_exec(array $args): array {
     return sh_exec($parts);
 }
 
+// Strip ANSI/VT100 escape sequences (colors, cursor moves). WordOps colorizes its
+// output even when not on a TTY, which otherwise breaks table/line parsing and
+// shows up as garbage like "[94m..." in the UI.
+function strip_ansi(string $s): string {
+    // CSI sequences (incl. SGR colors) + standalone ESC chars + carriage returns.
+    $s = preg_replace('/\x1b\[[0-9;?]*[ -\/]*[@-~]/', '', $s);
+    $s = str_replace(["\x1b", "\r"], '', $s);
+    return $s;
+}
+
 // Run an arbitrary non-`wo` command (tail, df, uptime). $args is an array of
 // already-safe tokens; each is shell-escaped here. Same shape as wo_exec().
 // Used by stack/logs/system routes. Never pass raw user strings.
@@ -35,10 +45,23 @@ function sh_exec(array $args): array {
     $lines = [];
     exec($full, $lines, $code);
     return [
-        'output' => trim(implode("\n", $lines)),
+        'output' => trim(strip_ansi(implode("\n", $lines))),
         'ok'     => $code === 0,
         'code'   => $code,
     ];
+}
+
+// Build a consistent JSON body from a command result. On failure attaches a
+// human-readable `error` (the command's own output, or an exit-code fallback)
+// so the frontend can surface exactly what `wo` reported.
+function cmd_response(array $r, array $extra = []): array {
+    $body = $extra + ['ok' => $r['ok'], 'output' => $r['output']];
+    if (!$r['ok']) {
+        $body['error'] = $r['output'] !== ''
+            ? $r['output']
+            : 'Command failed (exit code ' . ($r['code'] ?? -1) . ')';
+    }
+    return $body;
 }
 
 // Validate a domain. Sends 400 + exits on bad input. Returns clean domain.
