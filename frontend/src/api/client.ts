@@ -111,7 +111,8 @@ export const api = {
   },
   backups: {
     list: (d: string) => request<{ backups: Backup[] }>(`/sites/${d}/backups`).then(r => r.backups),
-    create: (d: string) => request<CommandResult>(`/sites/${d}/backups`, { method: 'POST' }),
+    create: (d: string, kind: 'db' | 'files') =>
+      request<CommandResult>(`/sites/${d}/backups`, { method: 'POST', body: JSON.stringify({ kind }) }),
     download: (d: string, f: string) =>
       api.download(`/sites/${d}/backups/${encodeURIComponent(f)}`, f),
     delete: (d: string, f: string) =>

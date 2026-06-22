@@ -5,8 +5,11 @@ import { useAsync } from '../hooks/useAsync'
 import { Card } from '../components/Card'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { Spinner } from '../components/Spinner'
+import { WorkingText } from '../components/WorkingText'
 import { useToast } from '../components/Toast'
 import type { Backup } from '../api/types'
+
+const BACKUP_MSGS = ['Dumping database…', 'Archiving files…', 'Compressing…', 'Almost there…']
 
 export function Backups() {
   const toast = useToast()
@@ -42,12 +45,12 @@ export function Backups() {
     setParams(d ? { domain: d } : {})
   }
 
-  const createBackup = async () => {
+  const createBackup = async (kind: 'db' | 'files') => {
     setCreating(true)
     try {
-      const r = await api.backups.create(domain)
-      if (r.ok) { toast.push('Backup created', 'success'); load(domain) }
-      else toast.push(r.output || 'Backup failed', 'error')
+      const r = await api.backups.create(domain, kind)
+      if (r.ok) { toast.push(`${kind === 'db' ? 'Database' : 'Files'} backup created`, 'success'); load(domain) }
+      else toast.push(r.error || r.output || 'Backup failed', 'error')
     } catch (e) {
       toast.push(e instanceof Error ? e.message : 'Backup failed', 'error')
     } finally {
@@ -100,9 +103,12 @@ export function Backups() {
             {sites.data?.map(s => <option key={s.domain} value={s.domain}>{s.domain}</option>)}
           </select>
           <button className="btn btn-default" disabled={!domain} onClick={() => load(domain)}>Refresh</button>
-          <button className="btn btn-primary" disabled={!domain || creating} onClick={createBackup}>
-            {creating ? <><Spinner /> This may take a minute…</> : 'Create Backup'}
-          </button>
+          {creating
+            ? <span className="btn btn-default" style={{ pointerEvents: 'none' }}><WorkingText messages={BACKUP_MSGS} /></span>
+            : <>
+                <button className="btn btn-primary" disabled={!domain} onClick={() => createBackup('db')}>Backup Database</button>
+                <button className="btn btn-primary" disabled={!domain} onClick={() => createBackup('files')}>Backup Files</button>
+              </>}
         </div>
       </div>
 
@@ -113,7 +119,7 @@ export function Backups() {
           <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
             <thead>
               <tr style={{ textAlign: 'left', background: 'var(--color-surface-2)' }}>
-                {['Filename', 'Size', 'Date', 'In S3', 'Actions'].map(h => (
+                {['Filename', 'Type', 'Size', 'Date', 'In S3', 'Actions'].map(h => (
                   <th key={h} style={{ padding: 'var(--space-sm) var(--space-md)', fontSize: 12, textTransform: 'uppercase' }}>{h}</th>
                 ))}
               </tr>
@@ -122,6 +128,7 @@ export function Backups() {
               {backups.map(b => (
                 <tr key={b.filename} style={{ borderTop: '1px solid #eee' }}>
                   <td className="mono" style={{ padding: 'var(--space-sm) var(--space-md)', fontSize: 13 }}>{b.filename}</td>
+                  <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{b.kind === 'database' ? 'DB' : b.kind === 'files' ? 'Files' : '—'}</td>
                   <td style={{ padding: 'var(--space-sm) var(--space-md)' }}>{b.size_mb} MB</td>
                   <td style={{ padding: 'var(--space-sm) var(--space-md)', color: 'var(--color-text-muted)', fontSize: 13 }}>
                     {new Date(b.created_at * 1000).toLocaleString()}
@@ -138,7 +145,7 @@ export function Backups() {
                 </tr>
               ))}
               {backups.length === 0 && (
-                <tr><td colSpan={5} style={{ padding: 'var(--space-lg)', color: 'var(--color-text-muted)' }}>No backups for this site.</td></tr>
+                <tr><td colSpan={6} style={{ padding: 'var(--space-lg)', color: 'var(--color-text-muted)' }}>No backups for this site.</td></tr>
               )}
             </tbody>
           </table>

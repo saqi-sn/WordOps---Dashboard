@@ -7,6 +7,7 @@ import { Modal } from '../components/Modal'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { StatusBadge } from '../components/StatusBadge'
 import { Spinner } from '../components/Spinner'
+import { WorkingText } from '../components/WorkingText'
 import { useToast } from '../components/Toast'
 import type { CreateSite, Site, SiteInfo, CommandResult } from '../api/types'
 
@@ -200,7 +201,7 @@ export function Sites() {
             <span>Let's Encrypt SSL (domain DNS must already resolve here)</span>
           </label>
           <button className="btn btn-primary" disabled={creating || !form.domain} onClick={create}>
-            {creating ? <><Spinner /> Creating… may take a minute</> : 'Create'}
+            {creating ? <WorkingText /> : 'Create'}
           </button>
         </div>
       </Modal>

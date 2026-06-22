@@ -1,10 +1,15 @@
 <?php
 // Routes: /sites/{domain}/backups*
-//   GET    /sites/{domain}/backups            -> scan backup dir
-//   POST   /sites/{domain}/backups            -> wo site backup {domain}
-//   GET    /sites/{domain}/backups/{file}     -> stream file (application/gzip)
+//   GET    /sites/{domain}/backups            -> list our backups
+//   POST   /sites/{domain}/backups            -> create one  { kind: "db" | "files" }
+//   GET    /sites/{domain}/backups/{file}     -> stream file (download)
 //   DELETE /sites/{domain}/backups/{file}     -> unlink (path-validated)
-//   POST   /sites/{domain}/backups/{file}/s3  -> push to S3 (needs s3.php / A8)
+//   POST   /sites/{domain}/backups/{file}/s3  -> push to S3
+//
+// Backups live OUTSIDE the site webroot, in /var/www/backups/{domain}/.
+// WordOps' own `wo site backup` only snapshots config files, so we roll our own:
+//   db    -> wp db export | gzip      -> db-<ts>.sql.gz
+//   files -> tar czf htdocs           -> files-<ts>.tar.gz
 
 const S3_MANIFEST = '.s3manifest.json';
 
@@ -14,34 +19,48 @@ function backups_out(array $data, int $code = 200): void {
     exit;
 }
 
-// Resolve a backup file path and confirm it stays inside the site's backup dir.
-function safe_backup_path(string $domain, string $filename): string|false {
-    $base = WEBROOT_BASE . '/' . $domain . '/backup/';
-    $path = realpath($base . basename($filename));
-    if (!$path || !str_starts_with($path, $base)) return false;
-    return $path;
+function backup_dir(string $domain): string {
+    return WEBROOT_BASE . '/backups/' . $domain . '/';
 }
 
-// Read the S3 manifest (list of filenames already pushed). Best-effort.
+// Resolve a backup file path and confirm it stays inside the site's backup dir.
+function safe_backup_path(string $domain, string $filename): string|false {
+    $base = backup_dir($domain);
+    $real = realpath($base . basename($filename));
+    if (!$real || !str_starts_with($real, realpath($base) ?: $base)) return false;
+    return $real;
+}
+
 function read_s3_manifest(string $domain): array {
-    $f = WEBROOT_BASE . '/' . $domain . '/backup/' . S3_MANIFEST;
+    $f = backup_dir($domain) . S3_MANIFEST;
     if (!is_file($f)) return [];
     $d = json_decode((string) @file_get_contents($f), true);
     return is_array($d) ? $d : [];
 }
 
 function add_to_s3_manifest(string $domain, string $filename): void {
-    $f = WEBROOT_BASE . '/' . $domain . '/backup/' . S3_MANIFEST;
+    $f = backup_dir($domain) . S3_MANIFEST;
     $list = read_s3_manifest($domain);
     if (!in_array($filename, $list, true)) $list[] = $filename;
     @file_put_contents($f, json_encode(array_values($list)), LOCK_EX);
+}
+
+// classify a backup file by name
+function backup_kind(string $name): string {
+    if (str_starts_with($name, 'db-'))    return 'database';
+    if (str_starts_with($name, 'files-')) return 'files';
+    return 'other';
+}
+
+function wp_bin(): string {
+    return is_file('/usr/local/bin/wp') ? '/usr/local/bin/wp' : 'wp';
 }
 
 function handle_backups(string $method, array $parts): void {
     $domain = validate_domain($parts[1] ?? '');
     $file   = $parts[3] ?? '';
     $action = $parts[4] ?? '';
-    $dir    = WEBROOT_BASE . '/' . $domain . '/backup/';
+    $dir    = backup_dir($domain);
 
     // collection: /sites/{domain}/backups
     if ($file === '') {
@@ -51,9 +70,10 @@ function handle_backups(string $method, array $parts): void {
             foreach (glob($dir . '*') ?: [] as $p) {
                 if (!is_file($p)) continue;
                 $name = basename($p);
-                if ($name === S3_MANIFEST || $name[0] === '.') continue;   // hide dotfiles
+                if ($name[0] === '.') continue;            // hide dotfiles/manifest
                 $items[] = [
                     'filename'   => $name,
+                    'kind'       => backup_kind($name),
                     'size_mb'    => round(filesize($p) / 1048576, 2),
                     'created_at' => filemtime($p),
                     'in_s3'      => in_array($name, $pushed, true),
@@ -63,8 +83,36 @@ function handle_backups(string $method, array $parts): void {
             backups_out(['backups' => $items]);
         }
         if ($method === 'POST') {
-            $r = wo_exec(['site', 'backup', $domain]);
-            backups_out(cmd_response($r), $r['ok'] ? 200 : 500);
+            @mkdir($dir, 0775, true);
+            if (!is_dir($dir)) backups_out(['error' => 'Could not create backup dir ' . $dir], 500);
+            set_time_limit(0);
+            $body = json_decode((string) file_get_contents('php://input'), true) ?? [];
+            $kind = $body['kind'] ?? '';
+            $ts   = gmdate('Ymd-His');
+            $htdocs = WEBROOT_BASE . '/' . $domain . '/htdocs';
+
+            if ($kind === 'db') {
+                if (!is_dir($htdocs)) backups_out(['error' => 'No htdocs for this site'], 400);
+                $sql = $dir . 'db-' . $ts . '.sql';
+                $r = sh_exec([wp_bin(), 'db', 'export', $sql, '--path=' . $htdocs, '--quiet']);
+                if (!$r['ok'] || !is_file($sql)) {
+                    backups_out(cmd_response($r, ['error' => 'DB export failed: ' . ($r['output'] ?: 'wp db export')]), 500);
+                }
+                $g = sh_exec(['gzip', '-f', $sql]);
+                backups_out(['ok' => true, 'file' => 'db-' . $ts . '.sql.gz', 'output' => 'Database backup created'] + (!$g['ok'] ? ['warning' => 'gzip failed; stored uncompressed'] : []));
+            }
+
+            if ($kind === 'files') {
+                if (!is_dir($htdocs)) backups_out(['error' => 'No htdocs for this site'], 400);
+                $tgz = $dir . 'files-' . $ts . '.tar.gz';
+                $r = sh_exec(['tar', '-czf', $tgz, '-C', WEBROOT_BASE . '/' . $domain, 'htdocs']);
+                if (!$r['ok'] || !is_file($tgz)) {
+                    backups_out(cmd_response($r, ['error' => 'Files backup failed: ' . ($r['output'] ?: 'tar')]), 500);
+                }
+                backups_out(['ok' => true, 'file' => 'files-' . $ts . '.tar.gz', 'output' => 'Files backup created']);
+            }
+
+            backups_out(['error' => 'Unknown backup kind (expected "db" or "files")'], 400);
         }
         backups_out(['error' => 'Method not allowed'], 405);
     }

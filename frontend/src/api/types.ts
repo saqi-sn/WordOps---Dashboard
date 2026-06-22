@@ -30,6 +30,7 @@ export interface PhpVersion {
 
 export interface Backup {
   filename: string
+  kind: 'database' | 'files' | 'other'
   size_mb: number
   created_at: number    // unix timestamp
   in_s3: boolean
