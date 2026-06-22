@@ -15,15 +15,30 @@ function stack_out(array $data, int $code = 200): void {
     exit;
 }
 
-// Parse `wo stack status` lines like "Nginx is running" / "MariaDB is stopped".
+// Parse `wo stack status`. WordOps formats vary by version:
+//   "nginx     :  Running"   (current: colon-separated, capitalized)
+//   "Nginx is running"       (older)
+// Lines like "UFW Firewall is disabled" are info, not a stack service -> skipped.
 function parse_stack_status(string $out): array {
     $services = [];
+    $norm = function (string $s): string {
+        $s = strtolower($s);
+        if (str_starts_with($s, 'run'))  return 'running';
+        if (str_starts_with($s, 'stop')) return 'stopped';
+        return 'unknown';
+    };
     foreach (preg_split('/\r?\n/', $out) as $line) {
-        if (preg_match('/^(\w[\w\s.]+?)\s+is\s+(running|stopped)/i', trim($line), $m)) {
-            $services[] = [
-                'name'   => trim($m[1]),
-                'status' => strtolower($m[2]),
-            ];
+        $line = trim($line);
+        if ($line === '') continue;
+        // format A: "nginx :  Running"
+        if (preg_match('/^([A-Za-z][\w.\-]*)\s*:\s*([A-Za-z]+)/', $line, $m)) {
+            $services[] = ['name' => $m[1], 'status' => $norm($m[2])];
+            continue;
+        }
+        // format B: "Nginx is running" (only accept running/stopped, so
+        // "UFW Firewall is disabled" is ignored)
+        if (preg_match('/^([A-Za-z][\w.\- ]*?)\s+is\s+(running|stopped)\b/i', $line, $m)) {
+            $services[] = ['name' => trim($m[1]), 'status' => strtolower($m[2])];
         }
     }
     return $services;
