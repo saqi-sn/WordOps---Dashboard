@@ -1,104 +1,186 @@
 #!/usr/bin/env bash
-# WordOps GUI — server installer.
-#
-# Run as root from the panel's htdocs AFTER extracting the release tarball:
+# WordOps GUI — server installer (secure by default).
 #
 #   cd /var/www/<panel-domain>/htdocs
 #   sudo bash install.sh
 #
-# It performs the one-time root steps the panel needs so it works with ANY PHP
-# version, whether PHP-FPM runs as www-data or as root — no nginx/pool edits:
-#   1. passwordless sudoers rule so the web user can run `wo` as root
-#   2. add the web user to `adm` so the Logs page can read /var/log/*
-#   3. ensure /root/.gitconfig exists (WordOps needs it when run as root)
-#   4. create api/config.php from the template if missing
-#   5. fix webroot ownership
-# The only manual step left is editing api/config.php (admin password + secret).
+# SECURITY MODEL
+# --------------
+# `wo` and /var/www management need root. Rather than letting the shared
+# `www-data` user run `sudo wo` (which would let ANY compromised website on the
+# box escalate to root), this installer gives the panel its OWN php-fpm pool that
+# runs as root, on its own socket, serving ONLY this panel. No sudoers rule is
+# created, so other websites gain nothing. The panel itself is login-gated.
+#
+# If it can't set up the dedicated pool (unexpected nginx layout), it falls back
+# to a `sudo wo` rule scoped to the web user and prints a security warning.
 set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "ERROR: run as root —  sudo bash install.sh"; exit 1; }
 
 HTDOCS="$(pwd)"
 API="$HTDOCS/api"
-[ -f "$API/index.php" ] || { echo "ERROR: run this from the panel htdocs (api/index.php not found here)"; exit 1; }
+[ -f "$API/index.php" ] || { echo "ERROR: run from the panel htdocs (api/index.php not found)"; exit 1; }
 
-# locate the wo binary
-WO_BIN="$(command -v wo 2>/dev/null || true)"
-[ -n "$WO_BIN" ] || WO_BIN="/usr/local/bin/wo"
+WO_BIN="$(command -v wo 2>/dev/null || true)"; [ -n "$WO_BIN" ] || WO_BIN="/usr/local/bin/wo"
 [ -x "$WO_BIN" ] || { echo "ERROR: wo not found at $WO_BIN — is WordOps installed?"; exit 1; }
 
-# web user: override with WEB_USER=... ; default to the WordOps default
-WEB_USER="${WEB_USER:-www-data}"
-id "$WEB_USER" >/dev/null 2>&1 || { echo "ERROR: user '$WEB_USER' does not exist (set WEB_USER=...)"; exit 1; }
+PANEL_DOMAIN="$(basename "$(dirname "$HTDOCS")")"
+SITE_CONF="/etc/nginx/sites-available/$PANEL_DOMAIN"
+echo ">> panel domain: $PANEL_DOMAIN"
+echo ">> htdocs:       $HTDOCS"
+echo ">> wo binary:    $WO_BIN"
 
-echo ">> web user:  $WEB_USER"
-echo ">> wo binary: $WO_BIN"
-echo ">> htdocs:    $HTDOCS"
+# --- helpers ------------------------------------------------------------------
 
-# 1. passwordless sudo for wo only
-SUDOERS="/etc/sudoers.d/wordops-gui"
-printf '%s ALL=(root) NOPASSWD: %s\n' "$WEB_USER" "$WO_BIN" > "$SUDOERS"
-chmod 440 "$SUDOERS"
-visudo -cf "$SUDOERS" >/dev/null && echo ">> [1/6] sudoers rule installed: $SUDOERS"
+set_config() {  # set_config KEY phpValue   (KEY without quotes; value is raw PHP)
+  local key="$1" val="$2"
+  if grep -q "define('$key'" "$API/config.php"; then
+    sed -i "s/.*define('$key'.*/define('$key', $val);/" "$API/config.php"
+  else
+    sed -i "/define('WO_BIN'/a define('$key', $val);" "$API/config.php"
+  fi
+}
 
-# 2. log read access (nginx/mysql logs are group adm)
-usermod -aG adm "$WEB_USER" && echo ">> [2/6] $WEB_USER added to group adm (log access)"
+ensure_gitconfig() {
+  if [ ! -f /root/.gitconfig ]; then
+    git config --global user.email "admin@$(hostname -f 2>/dev/null || echo localhost)" || true
+    git config --global user.name  "WordOps GUI" || true
+  fi
+}
 
-# 3. wo copies ~/.gitconfig to /root/.gitconfig when run as root; make sure it exists
-if [ ! -f /root/.gitconfig ]; then
-  git config --global user.email "admin@$(hostname -f 2>/dev/null || echo localhost)" || true
-  git config --global user.name  "WordOps GUI" || true
-fi
-echo ">> [3/6] /root/.gitconfig present"
-
-# 4. WordOps hardens php-fpm with systemd ProtectSystem=full, which mounts /etc
-# read-only for php-fpm AND every process it spawns (including `sudo wo`). That
-# makes `wo site create` fail with "Read-only file system: /etc/nginx/...".
-# Re-grant /etc as writable for the php-fpm service(s). Unix perms still apply —
-# only the panel's root pool can write /etc; www-data sites remain blocked.
-DROPIN_DONE=0
-for unit in $(systemctl list-unit-files --no-legend 'php*-fpm.service' 2>/dev/null | awk '{print $1}'); do
-  d="/etc/systemd/system/${unit}.d"
+# Re-grant /etc as writable for php-fpm: WordOps ships ProtectSystem=full, which
+# mounts /etc read-only for php-fpm and every child (incl. wo), breaking
+# `wo site create`. Unix perms still apply (only the root pool can write /etc).
+fix_protectsystem() {
+  local svc="$1" d
+  d="/etc/systemd/system/${svc}.d"
   mkdir -p "$d"
   printf '[Service]\nReadWritePaths=/etc\n' > "$d/wordops-gui.conf"
-  DROPIN_DONE=1
-done
-if [ "$DROPIN_DONE" -eq 1 ]; then
   systemctl daemon-reload
-  echo ">> [4/6] php-fpm ReadWritePaths=/etc drop-in installed (lets wo write nginx config)"
-else
-  echo ">> [4/6] WARN: no php*-fpm.service found — skipped ProtectSystem fix"
-fi
+}
 
-# 5. config.php from template
+# --- common setup -------------------------------------------------------------
+
+ensure_gitconfig
 if [ ! -f "$API/config.php" ]; then
   cp "$API/config.example.php" "$API/config.php"
-  echo ">> [5/6] created api/config.php from template"
-else
-  echo ">> [5/6] api/config.php already exists — left untouched"
+  echo ">> created api/config.php from template"
 fi
 
-# 6. ownership
-chown -R "$WEB_USER:$WEB_USER" "$HTDOCS"
-echo ">> [6/6] ownership set to $WEB_USER"
+# --- secure path: dedicated root pool ----------------------------------------
 
-# restart PHP-FPM so group membership + the drop-in take effect, then sanity-check
-"$WO_BIN" stack restart php >/dev/null 2>&1 || systemctl restart 'php*-fpm.service' >/dev/null 2>&1 || true
-if sudo -u "$WEB_USER" sudo -n "$WO_BIN" --version >/dev/null 2>&1; then
-  echo ">> verify: '$WEB_USER' can run 'sudo wo' — OK"
+setup_dedicated_pool() {
+  local phpnn dotver pooldir fpmsvc sock pool upstream
+  phpnn="$(grep -oE 'common/php[0-9]+\.conf' "$SITE_CONF" 2>/dev/null | grep -oE '[0-9]+' | head -1)"
+  if [ -n "$phpnn" ]; then
+    dotver="${phpnn%?}.${phpnn#?}"               # 83 -> 8.3, 74 -> 7.4
+  else
+    # site conf hand-edited (no common/phpNN include) -> use newest installed php-fpm
+    dotver="$(ls -d /etc/php/*/fpm 2>/dev/null | grep -oE '[0-9]+\.[0-9]+' | sort -V | tail -1)"
+  fi
+  [ -n "$dotver" ] || return 1
+  pooldir="/etc/php/$dotver/fpm/pool.d"
+  fpmsvc="php$dotver-fpm"
+  [ -d "$pooldir" ] || return 1
+  sock="/var/run/php/wordops-gui-fpm.sock"
+  pool="$pooldir/wordops-gui.conf"
+  upstream="/etc/nginx/conf.d/wordops-gui-upstream.conf"
+
+  # 1. dedicated root pool (clean minimal conf — no open_basedir/disable_functions)
+  cat > "$pool" <<EOF
+; WordOps GUI — dedicated pool, runs as root, serves ONLY the panel.
+[wordops-gui]
+user = root
+group = root
+listen = $sock
+listen.owner = www-data
+listen.group = www-data
+listen.mode = 0660
+pm = ondemand
+pm.max_children = 10
+pm.process_idle_timeout = 10s
+pm.max_requests = 500
+chdir = /
+security.limit_extensions = .php
+EOF
+
+  # 2. nginx upstream -> that socket
+  printf 'upstream wordopsgui {\n    server unix:%s;\n}\n' "$sock" > "$upstream"
+
+  # 3. point ONLY this site's PHP at the panel pool (idempotent)
+  if ! grep -q 'wordopsgui' "$SITE_CONF"; then
+    cp "$SITE_CONF" "$SITE_CONF.wogui.bak"
+    sed -i 's#[[:space:]]*include common/php[0-9]\+\.conf;#    location / {\n        try_files $uri $uri/ /index.php$is_args$args;\n    }\n    location ~ \\.php$ {\n        try_files $uri =404;\n        include fastcgi_params;\n        fastcgi_pass wordopsgui;\n    }#' "$SITE_CONF"
+  fi
+
+  # 4. ProtectSystem fix for this fpm service
+  fix_protectsystem "$fpmsvc"
+
+  # 5. panel runs as root pool -> no sudo, no sudoers rule
+  set_config WO_SUDO false
+  rm -f /etc/sudoers.d/wordops-gui
+
+  # 6. ownership (nginx serves static as www-data; root pool writes regardless)
+  chown -R www-data:www-data "$HTDOCS"
+
+  # 7. apply
+  systemctl restart "$fpmsvc"
+  if nginx -t >/dev/null 2>&1; then
+    systemctl reload nginx
+  else
+    echo ">> ERROR: nginx -t failed — restoring site conf"
+    [ -f "$SITE_CONF.wogui.bak" ] && mv "$SITE_CONF.wogui.bak" "$SITE_CONF"
+    systemctl reload nginx || true
+    return 1
+  fi
+  [ -S "$sock" ] || { echo ">> ERROR: panel socket $sock not created"; return 1; }
+
+  echo ""
+  echo ">> SECURE install complete — dedicated ROOT pool 'wordops-gui' on $sock"
+  echo ">> php service: $fpmsvc   |   no sudoers rule created (other sites can't escalate)"
+  return 0
+}
+
+# --- fallback: sudo wo for the web user (less isolated) -----------------------
+
+setup_sudo_fallback() {
+  local web="${WEB_USER:-www-data}"
+  id "$web" >/dev/null 2>&1 || { echo "ERROR: user '$web' missing (set WEB_USER=...)"; exit 1; }
+  local sudoers="/etc/sudoers.d/wordops-gui"
+  printf '%s ALL=(root) NOPASSWD: %s\n' "$web" "$WO_BIN" > "$sudoers"
+  chmod 440 "$sudoers"; visudo -cf "$sudoers" >/dev/null
+  usermod -aG adm "$web" || true
+  set_config WO_SUDO true
+  # ProtectSystem fix across all php-fpm services
+  for unit in $(systemctl list-unit-files --no-legend 'php*-fpm.service' 2>/dev/null | awk '{print $1}'); do
+    fix_protectsystem "$unit"
+  done
+  chown -R "$web:$web" "$HTDOCS"
+  "$WO_BIN" stack restart php >/dev/null 2>&1 || systemctl restart 'php*-fpm.service' >/dev/null 2>&1 || true
+  echo ""
+  echo ">> FALLBACK install complete — '$web' may run 'sudo wo'."
+  echo ">> SECURITY WARNING: any process running as '$web' (i.e. every website on"
+  echo ">> this server) can now run 'sudo wo' and escalate to root. Prefer the"
+  echo ">> dedicated-pool path: ensure $SITE_CONF includes common/phpNN.conf and re-run."
+}
+
+# --- run ----------------------------------------------------------------------
+
+if [ -f "$SITE_CONF" ] && setup_dedicated_pool; then
+  :
 else
-  echo ">> WARN: 'sudo -n wo' test as $WEB_USER failed — check $SUDOERS"
+  echo ">> dedicated-pool setup not possible — using sudo fallback"
+  setup_sudo_fallback
 fi
 
 cat <<EOF
 
-Done. Final manual step — edit the config:
+Final manual step — set the admin login + secret:
 
   sudo nano $API/config.php
+    ADMIN_PASS_HASH  ->  php -r "echo password_hash('YOUR_PASS', PASSWORD_DEFAULT);"
+    SESSION_SECRET   ->  openssl rand -hex 32
 
-Set:
-  ADMIN_PASS_HASH  ->  $WO_BIN ... or:  php -r "echo password_hash('YOUR_PASS', PASSWORD_DEFAULT);"
-  SESSION_SECRET   ->  openssl rand -hex 32
-
-Then open the panel in your browser and log in.
+Then open https://$PANEL_DOMAIN and log in.
 EOF
