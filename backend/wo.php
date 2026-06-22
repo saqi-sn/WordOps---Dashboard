@@ -3,23 +3,25 @@
 // Commands are built ONLY from validated domains + whitelisted flags.
 // Never concatenate raw user strings into the command line.
 
+// True when `wo` should be invoked via `sudo -n`. WO_SUDO enables it, but it is
+// auto-skipped when PHP already runs as root (no point + avoids needing a root
+// sudoers entry). Falls back to "use sudo" when the uid can't be determined.
+function wo_need_sudo(): bool {
+    if (!defined('WO_SUDO') || !WO_SUDO) return false;
+    if (function_exists('posix_getuid')) return posix_getuid() !== 0;
+    return true;
+}
+
 // Run a `wo` subcommand. $args is an array of already-safe tokens
 // (validated domain, whitelisted flags). Each is shell-escaped here.
+// `wo` needs root: when PHP runs as www-data this prepends `sudo -n` (see WO_SUDO).
 // Returns [ 'output' => string, 'ok' => bool, 'code' => int ].
 function wo_exec(array $args): array {
-    $parts = [escapeshellarg(WO_BIN)];
-    foreach ($args as $a) {
-        $parts[] = escapeshellarg((string) $a);
-    }
-    $full = implode(' ', $parts) . ' 2>&1';
-    $code = 0;
-    $lines = [];
-    exec($full, $lines, $code);
-    return [
-        'output' => trim(implode("\n", $lines)),
-        'ok'     => $code === 0,
-        'code'   => $code,
-    ];
+    $parts = [];
+    if (wo_need_sudo()) { $parts[] = 'sudo'; $parts[] = '-n'; }
+    $parts[] = WO_BIN;
+    foreach ($args as $a) $parts[] = (string) $a;
+    return sh_exec($parts);
 }
 
 // Run an arbitrary non-`wo` command (tail, df, uptime). $args is an array of

@@ -38,6 +38,7 @@ jobs:
           cp backend/routes/*.php pkg/api/routes/
           rm -f pkg/api/config.php                       # never ship secrets
           cp backend/config.example.php pkg/api/config.example.php
+          cp install.sh pkg/install.sh                   # server setup (sudoers, perms, config)
           tar -czf wordops-gui.tar.gz -C pkg .
           ls -la wordops-gui.tar.gz
 

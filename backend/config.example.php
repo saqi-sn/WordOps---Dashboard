@@ -4,12 +4,16 @@
 // --- Auth ---
 define('ADMIN_USER', 'admin');
 // Generate with: php -r "echo password_hash('your-password', PASSWORD_DEFAULT);"
-define('ADMIN_PASS_HASH', '$2y$10$replace_with_real_bcrypt_hash');
-define('SESSION_SECRET', 'change-me-64-char-secret');  // openssl rand -hex 32
+define('ADMIN_PASS_HASH', '$2y$10$yaARh4gPCfGzHCSPPk76jOqMsswdHqP6pbrTt.1fwwVt5ZbI9aQyO');
+define('SESSION_SECRET', '7090fa3922324d2bcfa0abc52ddd1e08e787b5811b6f1f2416c5a4f638df8d0a');  // openssl rand -hex 32
 define('SESSION_TTL', 86400);                           // token lifetime, seconds
 
 // --- WordOps ---
 define('WO_BIN', '/usr/local/bin/wo');
+// `wo` must run as root. When PHP-FPM runs as www-data (the WordOps default),
+// the app calls it via `sudo -n wo` — install.sh adds the passwordless sudoers
+// rule. Auto-skipped when PHP already runs as root, so this is safe either way.
+define('WO_SUDO', true);
 define('WEBROOT_BASE', '/var/www');     // sites + file manager jail + backups
 define('LOG_LINES', 200);
 

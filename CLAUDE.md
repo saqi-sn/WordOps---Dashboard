@@ -726,18 +726,26 @@ of two design choices that remove every reason to touch nginx:
 wo site create panel.example.com --php82          # configures nginx + PHP-FPM for us
 cd /var/www/panel.example.com/htdocs
 rm -f index.html index.php                         # drop WordOps placeholder
-wget -qO- https://github.com/saqi-sn/WordOps---Dashboard/releases/latest/download/wordops-gui.tar.gz | tar xz
-cp api/config.example.php api/config.php           # then fill in secrets (only manual step)
+# extract release (run the whole pipe as root so tar can write):
+sudo sh -c 'wget -qO- https://github.com/saqi-sn/WordOps---Dashboard/releases/latest/download/wordops-gui.tar.gz | tar xz --no-overwrite-dir'
+sudo bash install.sh                               # sudoers + perms + config.php (one command)
+sudo nano api/config.php                           # set ADMIN_PASS_HASH + SESSION_SECRET (only manual edit)
 ```
-Webroot ends up: `index.html` + `assets/` at root, PHP under `api/`. `client_max_body_size`
-is **not** required (WordOps php sites default to ample upload size; raise per-site only if
-200 MB uploads are actually used).
+Webroot ends up: `index.html` + `assets/` at root, PHP under `api/`, `install.sh` at root.
+`--no-overwrite-dir` avoids the `tar: .: Cannot utime` error on the pre-existing htdocs dir.
+`client_max_body_size` is **not** required (WordOps php sites default to ample upload size).
 
-### Privileges (unavoidable, one-time)
-`wo` + `/var/www` ops need root, but a php-site pool runs unprivileged. Either set the pool
-`user = root` (`/etc/php/8.x/fpm/pool.d/panel.example.com.conf` → `wo stack restart php`),
-or passwordless-sudo the `wo` binary and set `WO_BIN='sudo /usr/local/bin/wo'` (file-manager
-writes still need a root-capable pool).
+### Privileges — handled by install.sh (works any PHP version, root or not)
+`wo` must run as root, but a WordOps php-site pool runs as `www-data`. Rather than editing
+nginx/pools per server, the app calls `wo` via **`sudo -n wo`** (config `WO_SUDO`, auto-skipped
+when PHP already runs as root — see `wo.php::wo_need_sudo`). `install.sh` does the one-time root
+setup, version-agnostic:
+1. `/etc/sudoers.d/wordops-gui` — `www-data ALL=(root) NOPASSWD: /usr/local/bin/wo`
+2. adds the web user to group `adm` so the Logs page can read `/var/log/*`
+3. ensures `/root/.gitconfig` exists (WordOps fails without it when run as root)
+4. creates `api/config.php` from the template; fixes webroot ownership; restarts php-fpm
+Override the web user with `WEB_USER=... sudo -E bash install.sh`. File-manager writes to
+`/var/www` work as `www-data` (WordOps owns the tree as `www-data`).
 
 ### Release tarball — `.github/workflows/release.yml`
 On every `v*` tag (or manual dispatch): `npm ci && npm run build`, assemble `pkg/`
