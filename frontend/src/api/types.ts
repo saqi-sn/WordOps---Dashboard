@@ -18,6 +18,14 @@ export interface CreateSite {
   cache: 'fastcgi' | 'redis' | 'none'
   ssl: boolean
   proxyTarget?: string  // host:port when type=proxy
+  wp_user?: string      // optional WP admin (wp sites); blank -> WordOps default
+  wp_pass?: string
+  wp_email?: string
+}
+
+export interface PhpVersion {
+  code: string   // e.g. "83"
+  label: string  // e.g. "8.3"
 }
 
 export interface Backup {
@@ -68,4 +76,6 @@ export interface CommandResult {
   ok: boolean
   output?: string
   error?: string
+  wp_user?: string  // returned by site create for wp sites
+  wp_pass?: string
 }

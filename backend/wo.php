@@ -34,6 +34,20 @@ function strip_ansi(string $s): string {
     return $s;
 }
 
+// Fire a `wo` subcommand in the background and return immediately. Used for
+// commands that restart Nginx (e.g. `wo clean`) — since the panel is served by
+// that same Nginx, a foreground run would drop our own HTTP request mid-flight
+// (the browser shows a "network error" even though the command succeeds).
+function wo_exec_detached(array $args): void {
+    $parts = [];
+    if (wo_need_sudo()) { $parts[] = 'sudo'; $parts[] = '-n'; }
+    $parts[] = WO_BIN;
+    foreach ($args as $a) $parts[] = (string) $a;
+    $cmd = '';
+    foreach ($parts as $p) $cmd .= escapeshellarg($p) . ' ';
+    exec('nohup ' . $cmd . ' >/dev/null 2>&1 &');
+}
+
 // Run an arbitrary non-`wo` command (tail, df, uptime). $args is an array of
 // already-safe tokens; each is shell-escaped here. Same shape as wo_exec().
 // Used by stack/logs/system routes. Never pass raw user strings.
@@ -134,7 +148,38 @@ function build_create_args(array $body): array {
     // --- ssl ---
     if ($ssl) $args[] = '--le';
 
+    // --- optional WP admin credentials (wp sites only) ---
+    // If omitted, WordOps uses its default (system user + generated password),
+    // which we surface from the create output afterwards.
+    if ($type === 'wp') {
+        $user  = trim((string) ($body['wp_user']  ?? ''));
+        $pass  = (string) ($body['wp_pass']  ?? '');
+        $email = trim((string) ($body['wp_email'] ?? ''));
+        if ($user !== '') {
+            if (!preg_match('/^[a-zA-Z0-9._@-]{1,60}$/', $user)) reject('Invalid WP username');
+            $args[] = '--user=' . $user;
+        }
+        if ($pass !== '') {
+            // wo_exec escapes args, so any char is shell-safe; just bound length + no control chars
+            if (strlen($pass) > 100 || preg_match('/[\x00-\x1f]/', $pass)) reject('Invalid WP password');
+            $args[] = '--pass=' . $pass;
+        }
+        if ($email !== '') {
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) reject('Invalid WP email');
+            $args[] = '--email=' . $email;
+        }
+    }
+
     return $args;
+}
+
+// Pull WordPress admin user/password out of `wo site create` output, if present.
+// Lines look like "WordPress admin user : saqi" / "WordPress admin password : ...".
+function parse_wp_credentials(string $out): array {
+    $creds = [];
+    if (preg_match('/WordPress admin user\s*:\s*(.+)/i', $out, $m))     $creds['wp_user'] = trim($m[1]);
+    if (preg_match('/WordPress admin password\s*:\s*(.+)/i', $out, $m)) $creds['wp_pass'] = trim($m[1]);
+    return $creds;
 }
 
 // Send a 400 with message + exit.

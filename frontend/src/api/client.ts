@@ -1,7 +1,7 @@
 import { auth } from '../auth'
 import type {
   Site, SiteInfo, CreateSite, Backup, FileEntry,
-  StackStatus, DiskInfo, UptimeInfo, LogResponse, CommandResult,
+  StackStatus, DiskInfo, UptimeInfo, LogResponse, CommandResult, PhpVersion,
 } from './types'
 
 // API entry. Query-string routing: every call hits /api/index.php?p=/route so the
@@ -157,6 +157,7 @@ export const api = {
   system: {
     disk: () => request<DiskInfo>('/system/disk'),
     uptime: () => request<UptimeInfo>('/system/uptime'),
+    phpVersions: () => request<{ versions: PhpVersion[] }>('/system/php-versions').then(r => r.versions),
   },
 }
 

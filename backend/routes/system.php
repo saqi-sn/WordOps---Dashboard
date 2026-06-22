@@ -31,6 +31,16 @@ function handle_system(string $method, array $parts): void {
     if ($method !== 'GET') system_out(['error' => 'Method not allowed'], 405);
 
     switch ($parts[1] ?? '') {
+        case 'php-versions':
+            // installed PHP-FPM versions, e.g. /etc/php/8.3/fpm -> code "83", label "8.3"
+            $versions = [];
+            foreach (glob('/etc/php/*/fpm', GLOB_ONLYDIR) ?: [] as $dir) {
+                if (preg_match('#/etc/php/(\d+)\.(\d+)/fpm#', $dir, $m)) {
+                    $versions[] = ['code' => $m[1] . $m[2], 'label' => $m[1] . '.' . $m[2]];
+                }
+            }
+            usort($versions, fn($a, $b) => strcmp($a['code'], $b['code']));
+            system_out(['versions' => $versions]);
         case 'disk':
             $r = sh_exec(['df', '-h', WEBROOT_BASE]);
             system_out(parse_disk($r['output']) + ['output' => $r['output']]);
