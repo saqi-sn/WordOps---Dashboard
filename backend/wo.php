@@ -3,13 +3,13 @@
 // Commands are built ONLY from validated domains + whitelisted flags.
 // Never concatenate raw user strings into the command line.
 
-// True when `wo` should be invoked via `sudo -n`. WO_SUDO enables it, but it is
-// auto-skipped when PHP already runs as root (no point + avoids needing a root
-// sudoers entry). Falls back to "use sudo" when the uid can't be determined.
+// True when `wo` should be invoked via `sudo -n`.
+// Default ON: on WordOps boxes `wo` reliably runs only via sudo (it sets up the
+// root env `wo` expects), and `sudo -n` works for root too (root sudo needs no
+// password). Only skip when explicitly disabled with `define('WO_SUDO', false)`.
+// This means an older config.php (no WO_SUDO line) still gets the sudo path.
 function wo_need_sudo(): bool {
-    if (!defined('WO_SUDO') || !WO_SUDO) return false;
-    if (function_exists('posix_getuid')) return posix_getuid() !== 0;
-    return true;
+    return !(defined('WO_SUDO') && WO_SUDO === false);
 }
 
 // Run a `wo` subcommand. $args is an array of already-safe tokens
