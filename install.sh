@@ -131,10 +131,18 @@ EOF
   # 2. nginx upstream -> that socket
   printf 'upstream wordopsgui {\n    server unix:%s;\n}\n' "$sock" > "$upstream"
 
-  # 3. point ONLY this site's PHP at the panel pool (idempotent)
+  # 3. point ONLY this site's PHP at the panel pool (idempotent; handles both a
+  #    stock `include common/phpNN.conf` and an already-customised fastcgi_pass)
   if ! grep -q 'wordopsgui' "$SITE_CONF"; then
     cp "$SITE_CONF" "$SITE_CONF.wogui.bak"
-    sed -i 's#[[:space:]]*include common/php[0-9]\+\.conf;#    location / {\n        try_files $uri $uri/ /index.php$is_args$args;\n    }\n    location ~ \\.php$ {\n        try_files $uri =404;\n        include fastcgi_params;\n        fastcgi_pass wordopsgui;\n    }#' "$SITE_CONF"
+    if grep -qE 'include common/php[0-9]+\.conf;' "$SITE_CONF"; then
+      sed -i 's#[[:space:]]*include common/php[0-9]\+\.conf;#    location / {\n        try_files $uri $uri/ /index.php$is_args$args;\n    }\n    location ~ \\.php$ {\n        try_files $uri =404;\n        include fastcgi_params;\n        fastcgi_pass wordopsgui;\n    }#' "$SITE_CONF"
+    elif grep -qE 'fastcgi_pass' "$SITE_CONF"; then
+      sed -i 's#fastcgi_pass[[:space:]][^;]*;#fastcgi_pass wordopsgui;#' "$SITE_CONF"
+    else
+      echo ">> WARN: could not find a php location to repoint in $SITE_CONF"
+      return 1
+    fi
   fi
 
   # 4. ProtectSystem fix: even `sudo wo` (root) spawned from php-fpm inherits the
