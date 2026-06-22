@@ -743,7 +743,13 @@ setup, version-agnostic:
 1. `/etc/sudoers.d/wordops-gui` — `www-data ALL=(root) NOPASSWD: /usr/local/bin/wo`
 2. adds the web user to group `adm` so the Logs page can read `/var/log/*`
 3. ensures `/root/.gitconfig` exists (WordOps fails without it when run as root)
-4. creates `api/config.php` from the template; fixes webroot ownership; restarts php-fpm
+4. **php-fpm `ReadWritePaths=/etc` drop-in** — WordOps ships php-fpm with systemd
+   `ProtectSystem=full`, which mounts `/etc` read-only for php-fpm *and every child
+   it spawns* (incl. `sudo wo`). Without this, `wo site create` fails with
+   `Read-only file system: /etc/nginx/sites-available/...` *only when run from the
+   panel* (an interactive `sudo wo` works fine — no sandbox). The drop-in re-grants
+   `/etc`; unix perms still gate it (only the root pool can write, www-data can't).
+5. creates `api/config.php` from the template; fixes webroot ownership; restarts php-fpm
 Override the web user with `WEB_USER=... sudo -E bash install.sh`. File-manager writes to
 `/var/www` work as `www-data` (WordOps owns the tree as `www-data`).
 

@@ -39,32 +39,51 @@ echo ">> htdocs:    $HTDOCS"
 SUDOERS="/etc/sudoers.d/wordops-gui"
 printf '%s ALL=(root) NOPASSWD: %s\n' "$WEB_USER" "$WO_BIN" > "$SUDOERS"
 chmod 440 "$SUDOERS"
-visudo -cf "$SUDOERS" >/dev/null && echo ">> [1/5] sudoers rule installed: $SUDOERS"
+visudo -cf "$SUDOERS" >/dev/null && echo ">> [1/6] sudoers rule installed: $SUDOERS"
 
 # 2. log read access (nginx/mysql logs are group adm)
-usermod -aG adm "$WEB_USER" && echo ">> [2/5] $WEB_USER added to group adm (log access)"
+usermod -aG adm "$WEB_USER" && echo ">> [2/6] $WEB_USER added to group adm (log access)"
 
 # 3. wo copies ~/.gitconfig to /root/.gitconfig when run as root; make sure it exists
 if [ ! -f /root/.gitconfig ]; then
   git config --global user.email "admin@$(hostname -f 2>/dev/null || echo localhost)" || true
   git config --global user.name  "WordOps GUI" || true
 fi
-echo ">> [3/5] /root/.gitconfig present"
+echo ">> [3/6] /root/.gitconfig present"
 
-# 4. config.php from template
-if [ ! -f "$API/config.php" ]; then
-  cp "$API/config.example.php" "$API/config.php"
-  echo ">> [4/5] created api/config.php from template"
+# 4. WordOps hardens php-fpm with systemd ProtectSystem=full, which mounts /etc
+# read-only for php-fpm AND every process it spawns (including `sudo wo`). That
+# makes `wo site create` fail with "Read-only file system: /etc/nginx/...".
+# Re-grant /etc as writable for the php-fpm service(s). Unix perms still apply —
+# only the panel's root pool can write /etc; www-data sites remain blocked.
+DROPIN_DONE=0
+for unit in $(systemctl list-unit-files --no-legend 'php*-fpm.service' 2>/dev/null | awk '{print $1}'); do
+  d="/etc/systemd/system/${unit}.d"
+  mkdir -p "$d"
+  printf '[Service]\nReadWritePaths=/etc\n' > "$d/wordops-gui.conf"
+  DROPIN_DONE=1
+done
+if [ "$DROPIN_DONE" -eq 1 ]; then
+  systemctl daemon-reload
+  echo ">> [4/6] php-fpm ReadWritePaths=/etc drop-in installed (lets wo write nginx config)"
 else
-  echo ">> [4/5] api/config.php already exists — left untouched"
+  echo ">> [4/6] WARN: no php*-fpm.service found — skipped ProtectSystem fix"
 fi
 
-# 5. ownership
-chown -R "$WEB_USER:$WEB_USER" "$HTDOCS"
-echo ">> [5/5] ownership set to $WEB_USER"
+# 5. config.php from template
+if [ ! -f "$API/config.php" ]; then
+  cp "$API/config.example.php" "$API/config.php"
+  echo ">> [5/6] created api/config.php from template"
+else
+  echo ">> [5/6] api/config.php already exists — left untouched"
+fi
 
-# restart PHP-FPM so the new group membership takes effect, then sanity-check
-"$WO_BIN" stack restart php >/dev/null 2>&1 || true
+# 6. ownership
+chown -R "$WEB_USER:$WEB_USER" "$HTDOCS"
+echo ">> [6/6] ownership set to $WEB_USER"
+
+# restart PHP-FPM so group membership + the drop-in take effect, then sanity-check
+"$WO_BIN" stack restart php >/dev/null 2>&1 || systemctl restart 'php*-fpm.service' >/dev/null 2>&1 || true
 if sudo -u "$WEB_USER" sudo -n "$WO_BIN" --version >/dev/null 2>&1; then
   echo ">> verify: '$WEB_USER' can run 'sudo wo' — OK"
 else
